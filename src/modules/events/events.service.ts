@@ -171,10 +171,7 @@ export async function scan(userId: string, input: { token: string; deviceId: str
   if (v === "INVALID") throw new AppError("INVALID_QR", 400, "QR tidak valid");
   if (v === "EXPIRED") throw new AppError("QR_EXPIRED", 400, "QR sudah kedaluwarsa, scan ulang QR terbaru");
 
-  // Satu akun satu device; ganti device harus direset admin.
-  const user = await prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { deviceId: true } });
-  if (user.deviceId && user.deviceId !== input.deviceId) throw new AppError("DEVICE_MISMATCH", 403, "Akun terikat ke perangkat lain. Minta reset ke admin.");
-  if (!user.deviceId) await prisma.user.update({ where: { id: userId }, data: { deviceId: input.deviceId } });
+  // Binding 1 akun = 1 perangkat dinonaktifkan; deviceId tetap dicatat di absensi untuk jejak audit.
 
   if (e.geofenceOn && e.lat != null && e.lng != null && e.radiusM != null) {
     if (input.lat == null || input.lng == null) throw new AppError("LOCATION_REQUIRED", 400, "Aktifkan lokasi untuk absen kegiatan ini");

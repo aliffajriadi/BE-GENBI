@@ -75,14 +75,12 @@ const [eid] = qr.token.split(".");
 assert.equal((await call(A3, "POST", "/attendance/scan", { token: `${eid}.${Date.now() - 60_000}.abc`, deviceId: "hp-citra" })).error.code, "INVALID_QR");
 step("QR palsu ditolak");
 
-// Device binding: Ani sudah terikat ke hp-ani.
 await ok(call(K, "POST", `/events/${kev.id}/open`));
 const kqr = await ok(call(K, "GET", `/events/${kev.id}/qr-token`));
-assert.equal((await call(A1, "POST", "/attendance/scan", { token: kqr.token, deviceId: "hp-lain" })).error.code, "DEVICE_MISMATCH");
-step("device lain ditolak");
 assert.equal((await call(A3, "POST", "/attendance/scan", { token: kqr.token, deviceId: "hp-citra" })).error.code, "NOT_PARTICIPANT");
 step("anggota divisi lain bukan peserta rapat divisi");
-const telat = await ok(call(A1, "POST", "/attendance/scan", { token: kqr.token, deviceId: "hp-ani" }));
+// Binding perangkat nonaktif: Ani boleh scan dari HP lain.
+const telat = await ok(call(A1, "POST", "/attendance/scan", { token: kqr.token, deviceId: "hp-lain" }));
 assert.equal(telat.status, "TELAT"); step("lewat batas → TELAT");
 
 // Scan balik oleh panitia
