@@ -1,0 +1,6 @@
+# Paket yang boleh menjalankan build script saat install (pnpm memblokir default).
+allowBuilds:
+  "@prisma/client": true
+  "@prisma/engines": true
+  prisma: true
+  esbuild: true

@@ -1,0 +1,7 @@
+-- AlterTable
+ALTER TABLE `User` ADD COLUMN `bio` VARCHAR(300) NULL,
+    ADD COLUMN `coverUrl` VARCHAR(191) NULL,
+    ADD COLUMN `instagram` VARCHAR(191) NULL,
+    ADD COLUMN `tiktok` VARCHAR(191) NULL,
+    ADD COLUMN `website` VARCHAR(191) NULL;
+

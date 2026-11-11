@@ -1,0 +1,18 @@
+# Dependensi & hasil build
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Rahasia (contoh nilai ada di .env.example)
+.env
+.env.*
+!.env.example
+
+# File upload anggota (dibuat otomatis saat upload)
+storage/
+
+# Log
+*.log
+npm-debug.log*
+pnpm-debug.log*

@@ -1,0 +1,10 @@
+-- AlterTable
+ALTER TABLE `Channel` ADD COLUMN `archivedAt` DATETIME(3) NULL,
+    ADD COLUMN `createdById` VARCHAR(191) NULL,
+    ADD COLUMN `description` VARCHAR(300) NULL,
+    ADD COLUMN `readOnly` BOOLEAN NOT NULL DEFAULT false,
+    MODIFY `type` ENUM('GENERAL', 'CORE', 'DIVISION', 'EVENT', 'CUSTOM') NOT NULL;
+
+-- AlterTable
+ALTER TABLE `ChannelMember` ADD COLUMN `isMember` BOOLEAN NOT NULL DEFAULT false;
+

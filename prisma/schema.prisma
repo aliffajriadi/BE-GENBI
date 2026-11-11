@@ -1,0 +1,731 @@
+// Skema inti MVP — lihat docs/PRD.md bagian 13.
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ───────────── Akun ─────────────
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  ALUMNI
+}
+
+model User {
+  id            String     @id @default(cuid())
+  email         String     @unique
+  passwordHash  String
+  name          String
+  nim           String?
+  phone         String?
+  campus        String?
+  major         String?
+  batch         String?
+  avatarUrl     String?
+  coverUrl      String? // latar profil
+  bio           String?    @db.VarChar(300)
+  instagram     String? // username tanpa @
+  tiktok        String? // username tanpa @
+  website       String?
+  profilePublic Boolean    @default(true) // tampil di halaman Anggota web publik (anggota bisa menyembunyikan)
+  status        UserStatus @default(ACTIVE)
+  deviceId      String?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+  deletedAt     DateTime?
+
+  memberships      Membership[]
+  refreshTokens    RefreshToken[]
+  articles         Article[]          @relation("ArticleAuthor")
+  articleRevisions ArticleRevision[]
+  articleReviews   ArticleReview[]
+  eventsCreated    Event[]            @relation("EventCreator")
+  participations   EventParticipant[]
+  attendances      Attendance[]
+  leaveRequests    LeaveRequest[]     @relation("LeaveRequester")
+  leaveDecisions   LeaveRequest[]     @relation("LeaveDecider")
+  pointRulesEdited PointRule[]
+  pointLedger      PointLedger[]      @relation("LedgerUser")
+  pointsGiven      PointLedger[]      @relation("LedgerCreator")
+  bills            DuesBill[]
+  payments         Payment[]          @relation("PaymentUser")
+  paymentsVerified Payment[]          @relation("PaymentVerifier")
+  dispositions     Disposition[]
+  actionItems      ActionItem[]
+  channelMembers   ChannelMember[]
+  messages         Message[]
+  notifications    Notification[]
+  auditLogs        AuditLog[]
+  uploads          Upload[]
+  divisionGrants   DivisionGrant[]    @relation("GrantUser")
+}
+
+model Role {
+  id          String           @id @default(cuid())
+  key         String           @unique // SYS_ADMIN, KETUM, SEKRETARIS, BENDAHARA, KADIV, ANGGOTA
+  name        String
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  permissions RolePermission[]
+  memberships Membership[]
+}
+
+model Permission {
+  id        String           @id @default(cuid())
+  key       String           @unique // contoh: article.publish
+  label     String
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+  roles     RolePermission[]
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+}
+
+model Period {
+  id          String        @id @default(cuid())
+  name        String        @unique // 2026/2027
+  startDate   DateTime
+  endDate     DateTime
+  isActive    Boolean       @default(false)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  divisions   Division[]
+  memberships Membership[]
+  pointLedger PointLedger[]
+  documents   Document[]
+}
+
+model Division {
+  id          String          @id @default(cuid())
+  name        String
+  slug        String
+  description String?         @db.Text
+  periodId    String
+  period      Period          @relation(fields: [periodId], references: [id])
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  memberships Membership[]
+  articles    Article[]
+  events      Event[]
+  disposition Disposition[]
+  channels    Channel[]
+  duesPlans   DuesPlan[]
+  grants      DivisionGrant[]
+
+  @@unique([periodId, slug])
+}
+
+// Riwayat jabatan per periode. Role aktif user = membership di periode aktif.
+model Membership {
+  id         String    @id @default(cuid())
+  userId     String
+  periodId   String
+  roleId     String
+  divisionId String?
+  position   String? // jabatan, misal "Kepala Divisi Media"
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  period     Period    @relation(fields: [periodId], references: [id])
+  role       Role      @relation(fields: [roleId], references: [id])
+  division   Division? @relation(fields: [divisionId], references: [id])
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@unique([userId, periodId])
+}
+
+model RefreshToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  device    String?
+  expiresAt DateTime
+  revokedAt DateTime?
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+// ───────────── Konten ─────────────
+
+enum ArticleStatus {
+  DRAFT
+  IN_REVIEW
+  REVISION
+  SCHEDULED
+  PUBLISHED
+  ARCHIVED
+}
+
+// NEWS = kabar & kegiatan organisasi (ditulis pengurus); PERSONAL = tulisan pribadi anggota.
+enum ArticleKind {
+  NEWS
+  PERSONAL
+}
+
+model Article {
+  id          String            @id @default(cuid())
+  title       String
+  slug        String            @unique
+  excerpt     String?           @db.Text
+  contentJson Json?
+  contentHtml String?           @db.LongText
+  coverUrl    String?
+  coverAlt    String?
+  status      ArticleStatus     @default(DRAFT)
+  kind        ArticleKind       @default(PERSONAL)
+  authorId    String
+  divisionId  String?
+  publishedAt DateTime?
+  scheduledAt DateTime?
+  seoTitle    String?
+  seoDesc     String?
+  viewCount   Int               @default(0)
+  author      User              @relation("ArticleAuthor", fields: [authorId], references: [id])
+  division    Division?         @relation(fields: [divisionId], references: [id])
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  deletedAt   DateTime?
+  revisions   ArticleRevision[]
+  reviews     ArticleReview[]
+  tags        ArticleTag[]
+
+  @@index([status, kind, publishedAt])
+}
+
+model ArticleRevision {
+  id          String   @id @default(cuid())
+  articleId   String
+  contentJson Json
+  editorId    String
+  article     Article  @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  editor      User     @relation(fields: [editorId], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model ArticleReview {
+  id         String   @id @default(cuid())
+  articleId  String
+  reviewerId String
+  decision   String // APPROVE | REVISION
+  note       String?  @db.Text
+  article    Article  @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  reviewer   User     @relation(fields: [reviewerId], references: [id])
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model Tag {
+  id        String       @id @default(cuid())
+  name      String
+  slug      String       @unique
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  articles  ArticleTag[]
+}
+
+model ArticleTag {
+  articleId String
+  tagId     String
+  article   Article @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  tag       Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([articleId, tagId])
+}
+
+model Page {
+  id          String    @id @default(cuid())
+  title       String
+  slug        String    @unique
+  contentJson Json?
+  contentHtml String?   @db.LongText
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+}
+
+// ───────────── Absensi ─────────────
+
+enum EventType {
+  RAPAT_PLENO
+  RAPAT_DIVISI
+  KEGIATAN
+  KEPANITIAAN
+}
+
+enum EventScope {
+  ALL
+  DIVISION
+  MANUAL
+}
+
+enum AttendanceWindow {
+  CLOSED
+  OPEN
+  DONE
+}
+
+model Event {
+  id               String             @id @default(cuid())
+  title            String
+  type             EventType
+  startAt          DateTime
+  endAt            DateTime
+  lateAfter        DateTime
+  location         String?
+  lat              Float?
+  lng              Float?
+  radiusM          Int?
+  geofenceOn       Boolean            @default(false)
+  pointHadir       Int? // override aturan poin; null = pakai PointRule
+  pointTelat       Int?
+  scope            EventScope         @default(ALL)
+  divisionId       String?
+  createdById      String
+  attendanceStatus AttendanceWindow   @default(CLOSED)
+  qrSecret         String? // dibuat saat absensi dibuka
+  division         Division?          @relation(fields: [divisionId], references: [id])
+  createdBy        User               @relation("EventCreator", fields: [createdById], references: [id])
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  deletedAt        DateTime?
+  participants     EventParticipant[]
+  attendances      Attendance[]
+  leaveRequests    LeaveRequest[]
+  minutes          MeetingMinute[]
+  channels         Channel[]
+}
+
+model EventParticipant {
+  eventId String
+  userId  String
+  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([eventId, userId])
+}
+
+enum AttendanceStatus {
+  HADIR
+  TELAT
+  IZIN
+  SAKIT
+  ALPA
+}
+
+enum AttendanceMethod {
+  QR
+  SCAN_BALIK
+  MANUAL
+  AUTO
+}
+
+model Attendance {
+  id        String           @id @default(cuid())
+  eventId   String
+  userId    String
+  status    AttendanceStatus
+  method    AttendanceMethod
+  scannedAt DateTime         @default(now())
+  lat       Float?
+  lng       Float?
+  deviceId  String?
+  note      String?
+  event     Event            @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user      User             @relation(fields: [userId], references: [id])
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  @@unique([eventId, userId]) // anti replay / absen dobel
+}
+
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum LeaveKind {
+  IZIN
+  SAKIT
+}
+
+model LeaveRequest {
+  id            String      @id @default(cuid())
+  eventId       String
+  userId        String
+  kind          LeaveKind   @default(IZIN)
+  reason        String      @db.Text
+  attachmentUrl String?
+  status        LeaveStatus @default(PENDING)
+  decidedById   String?
+  event         Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user          User        @relation("LeaveRequester", fields: [userId], references: [id])
+  decidedBy     User?       @relation("LeaveDecider", fields: [decidedById], references: [id])
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([eventId, userId])
+}
+
+// ───────────── Poin ─────────────
+
+enum PointTrigger {
+  AUTO
+  MANUAL
+}
+
+enum PointSource {
+  ATTENDANCE
+  ARTICLE
+  KAS
+  MANUAL
+}
+
+model PointRule {
+  id          String       @id @default(cuid())
+  key         String       @unique // HADIR, TELAT, IZIN, ALPA, ARTICLE_PUBLISHED, KAS_ON_TIME, PANITIA, ...
+  label       String
+  points      Int
+  trigger     PointTrigger
+  isActive    Boolean      @default(true)
+  updatedById String?
+  updatedBy   User?        @relation(fields: [updatedById], references: [id])
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+}
+
+model PointLedger {
+  id          String      @id @default(cuid())
+  userId      String
+  periodId    String
+  points      Int
+  sourceType  PointSource
+  sourceId    String?
+  note        String?
+  createdById String?
+  user        User        @relation("LedgerUser", fields: [userId], references: [id])
+  period      Period      @relation(fields: [periodId], references: [id])
+  createdBy   User?       @relation("LedgerCreator", fields: [createdById], references: [id])
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@index([periodId, userId])
+}
+
+// ───────────── Keuangan ─────────────
+
+model BankAccount {
+  id            String   @id @default(cuid())
+  bankName      String
+  accountNumber String
+  accountName   String
+  qrisImageUrl  String?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+enum DuesFrequency {
+  MONTHLY
+  SEMESTER
+  ONCE
+}
+
+model DuesPlan {
+  id         String        @id @default(cuid())
+  name       String
+  amount     Int
+  frequency  DuesFrequency
+  dueDay     Int? // MONTHLY/SEMESTER: tanggal jatuh tempo di bulan tagihan
+  dueDate    DateTime? // ONCE (iuran insidental)
+  scope      EventScope    @default(ALL)
+  divisionId String?
+  isActive   Boolean       @default(true)
+  division   Division?     @relation(fields: [divisionId], references: [id])
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+  deletedAt  DateTime?
+  bills      DuesBill[]
+}
+
+enum BillStatus {
+  UNPAID
+  PENDING
+  PAID
+  REJECTED
+  OVERDUE
+}
+
+model DuesBill {
+  id          String        @id @default(cuid())
+  planId      String
+  userId      String
+  periodLabel String
+  amount      Int
+  dueDate     DateTime
+  status      BillStatus    @default(UNPAID)
+  plan        DuesPlan      @relation(fields: [planId], references: [id])
+  user        User          @relation(fields: [userId], references: [id])
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  payments    PaymentBill[]
+
+  @@unique([planId, userId, periodLabel])
+}
+
+enum PaymentStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+model Payment {
+  id           String        @id @default(cuid())
+  userId       String
+  amount       Int
+  transferDate DateTime
+  proofUrl     String
+  status       PaymentStatus @default(PENDING)
+  verifiedById String?
+  rejectReason String?
+  user         User          @relation("PaymentUser", fields: [userId], references: [id])
+  verifiedBy   User?         @relation("PaymentVerifier", fields: [verifiedById], references: [id])
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  bills        PaymentBill[]
+}
+
+model PaymentBill {
+  paymentId String
+  billId    String
+  payment   Payment  @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  bill      DuesBill @relation(fields: [billId], references: [id], onDelete: Cascade)
+
+  @@id([paymentId, billId])
+}
+
+enum CashType {
+  IN
+  OUT
+}
+
+model CashTransaction {
+  id            String    @id @default(cuid())
+  type          CashType
+  category      String
+  amount        Int
+  date          DateTime
+  description   String?
+  attachmentUrl String?
+  refType       String?
+  refId         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+}
+
+// ───────────── Administrasi ─────────────
+
+enum LetterDirection {
+  IN
+  OUT
+}
+
+model Letter {
+  id           String          @id @default(cuid())
+  direction    LetterDirection
+  number       String?
+  subject      String
+  counterparty String // pengirim (IN) / penerima (OUT)
+  date         DateTime
+  fileUrl      String?
+  status       String          @default("DRAFT")
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  deletedAt    DateTime?
+  dispositions Disposition[]
+}
+
+model Disposition {
+  id           String    @id @default(cuid())
+  letterId     String
+  toUserId     String?
+  toDivisionId String?
+  note         String?   @db.Text
+  letter       Letter    @relation(fields: [letterId], references: [id], onDelete: Cascade)
+  toUser       User?     @relation(fields: [toUserId], references: [id])
+  toDivision   Division? @relation(fields: [toDivisionId], references: [id])
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+model MeetingMinute {
+  id          String       @id @default(cuid())
+  eventId     String
+  content     String       @db.LongText
+  decisions   String?      @db.Text
+  event       Event        @relation(fields: [eventId], references: [id])
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  actionItems ActionItem[]
+}
+
+model ActionItem {
+  id        String        @id @default(cuid())
+  minuteId  String
+  picId     String
+  title     String
+  dueDate   DateTime?
+  done      Boolean       @default(false)
+  minute    MeetingMinute @relation(fields: [minuteId], references: [id], onDelete: Cascade)
+  pic       User          @relation(fields: [picId], references: [id])
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+}
+
+model Document {
+  id         String    @id @default(cuid())
+  title      String
+  category   String
+  periodId   String?
+  fileUrl    String
+  visibility String    @default("PENGURUS")
+  period     Period?   @relation(fields: [periodId], references: [id])
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  deletedAt  DateTime?
+}
+
+// ───────────── Chat ─────────────
+
+enum ChannelType {
+  GENERAL
+  CORE
+  DIVISION
+  EVENT
+  CUSTOM // anggota dipilih manual (ChannelMember.isMember)
+}
+
+model Channel {
+  id          String          @id @default(cuid())
+  key         String?         @unique // channel bawaan: "umum", "pengurus-inti", "div:<divisionId>"; null = dibuat pengurus
+  name        String
+  description String?         @db.VarChar(300)
+  type        ChannelType
+  readOnly    Boolean         @default(false) // true = hanya pengelola yang bisa kirim pesan (pengumuman)
+  createdById String?
+  archivedAt  DateTime?
+  divisionId  String? // lingkup divisi (wajib untuk channel buatan Kadiv)
+  eventId     String?
+  division    Division?       @relation(fields: [divisionId], references: [id])
+  event       Event?          @relation(fields: [eventId], references: [id])
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  members     ChannelMember[]
+  messages    Message[]
+}
+
+model ChannelMember {
+  channelId  String
+  userId     String
+  isMember   Boolean   @default(false) // untuk channel CUSTOM: boleh melihat & ikut; baris lain hanya menyimpan status baca
+  mutedUntil DateTime?
+  lastReadAt DateTime?
+  channel    Channel   @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([channelId, userId])
+}
+
+model Message {
+  id          String    @id @default(cuid())
+  channelId   String
+  senderId    String
+  body        String    @db.Text
+  attachments Json?
+  replyToId   String?
+  pinned      Boolean   @default(false)
+  editedAt    DateTime?
+  channel     Channel   @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  sender      User      @relation(fields: [senderId], references: [id])
+  replyTo     Message?  @relation("Reply", fields: [replyToId], references: [id])
+  replies     Message[] @relation("Reply")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  @@index([channelId, createdAt])
+}
+
+// ───────────── Sistem ─────────────
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  type      String
+  title     String
+  body      String?   @db.Text
+  data      Json?
+  readAt    DateTime?
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([userId, readAt])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String?
+  action    String
+  entity    String
+  entityId  String?
+  before    Json?
+  after     Json?
+  ip        String?
+  actor     User?    @relation(fields: [actorId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([entity, entityId])
+}
+
+model Upload {
+  id        String   @id @default(cuid())
+  key       String   @unique // path relatif di storage/
+  mime      String
+  size      Int
+  isPrivate Boolean  @default(true)
+  ownerId   String
+  owner     User     @relation(fields: [ownerId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Akses yang didelegasikan Kepala Divisi ke anggota divisinya. Berlaku hanya di lingkup divisi itu.
+// area: "events" (kegiatan & rapat divisi), "chat" (diskusi divisi), "points" (beri poin anggota divisi).
+model DivisionGrant {
+  id          String   @id @default(cuid())
+  divisionId  String
+  userId      String
+  area        String
+  grantedById String
+  division    Division @relation(fields: [divisionId], references: [id], onDelete: Cascade)
+  user        User     @relation("GrantUser", fields: [userId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+
+  @@unique([divisionId, userId, area])
+}
