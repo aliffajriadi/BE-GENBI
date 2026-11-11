@@ -18,6 +18,7 @@ import { financeRoutes } from "./modules/finance/finance.routes.js";
 import { notificationsRoutes } from "./modules/notifications/notifications.routes.js";
 import { uploadsRoutes } from "./modules/uploads/uploads.routes.js";
 import { chatRoutes } from "./modules/chat/chat.routes.js";
+import { planningRoutes } from "./modules/planning/planning.routes.js";
 import { publicDir } from "./lib/storage.js";
 
 export const app = express();
@@ -35,7 +36,7 @@ app.use("/storage/public", express.static(publicDir, { maxAge: "7d" }));
 app.get("/health", (_req, res) => res.json({ ok: true }));
 
 const v1 = express.Router();
-v1.use(publicRoutes, authRoutes, usersRoutes, membersRoutes, divisionAccessRoutes, eventsRoutes, pointsRoutes, dashboardRoutes, auditRoutes, uploadsRoutes, notificationsRoutes, financeRoutes, articlesRoutes, administrationRoutes, chatRoutes);
+v1.use(publicRoutes, authRoutes, usersRoutes, membersRoutes, divisionAccessRoutes, eventsRoutes, pointsRoutes, dashboardRoutes, auditRoutes, uploadsRoutes, notificationsRoutes, financeRoutes, articlesRoutes, administrationRoutes, chatRoutes, planningRoutes);
 app.use("/api/v1", v1);
 
 app.use((_req, res) => res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Endpoint tidak ada" } }));

@@ -5,6 +5,7 @@ import { env } from "../../config/env.js";
 import { prisma } from "../../lib/prisma.js";
 import { buildUser, type AccessPayload, type AuthUser } from "../../middlewares/auth.js";
 import { accessibleChannels, room, setIo } from "./chat.service.js";
+import { boardRoom, canViewBoard } from "../planning/planning.routes.js";
 
 // Realtime chat: klien kirim pesan lewat REST, server menyiarkan lewat Socket.IO.
 // shortcut: satu instance tanpa adapter Redis (cukup untuk skala organisasi); tambah @socket.io/redis-adapter bila API di-scale >1 instance.
@@ -34,6 +35,15 @@ export function attachSocket(server: HttpServer) {
       console.error("socket setup gagal:", err.message);
       socket.disconnect(); // klien akan menyambung ulang otomatis
       return null;
+    });
+
+    // Papan planning: klien minta ikut room papan yang sedang dibuka (dicek hak lihatnya).
+    socket.on("board:watch", async (divisionId: unknown) => {
+      await ready;
+      if (typeof divisionId === "string" && canViewBoard(u, divisionId)) await socket.join(boardRoom(divisionId));
+    });
+    socket.on("board:unwatch", (divisionId: unknown) => {
+      if (typeof divisionId === "string") void socket.leave(boardRoom(divisionId));
     });
 
     // Indikator "sedang mengetik" hanya untuk room yang sedang diikuti socket ini (ikut berubah saat akses channel diubah).

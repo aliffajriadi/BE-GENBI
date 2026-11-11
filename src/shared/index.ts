@@ -339,6 +339,7 @@ export const DIVISION_AREAS = {
   chat: { label: "Diskusi divisi", desc: "Buat & atur diskusi untuk anggota divisi, moderasi pesan", permissions: ["chat.moderate"] },
   points: { label: "Poin anggota divisi", desc: "Beri atau koreksi poin keaktifan anggota divisi", permissions: ["points.adjust"] },
   // Tanpa permission global: akses kas divisi dicek langsung (finance.manage = kas organisasi milik Bendahara).
+  planning: { label: "Papan planning", desc: "Atur kolom papan kanban divisi: tambah, ganti nama, urutkan, hapus", permissions: [] },
   finance: { label: "Kas divisi", desc: "Buat iuran divisi, atur rekening, verifikasi bukti bayar & catat buku kas divisi", permissions: [] },
 } as const satisfies Record<string, { label: string; desc: string; permissions: PermissionKey[] }>;
 export type DivisionArea = keyof typeof DIVISION_AREAS;
@@ -346,3 +347,17 @@ export const divisionAccessSchema = z.object({ areas: z.array(z.enum(Object.keys
 
 // Role dengan wewenang lintas divisi. Selain ini (Kadiv & anggota yang diberi akses) selalu dibatasi ke divisinya sendiri.
 export const GLOBAL_ROLES: RoleKey[] = ["SYS_ADMIN", "KETUM", "SEKRETARIS"];
+
+// ───────────── Planning divisi (kanban) ─────────────
+export const boardColumnSchema = z.object({ name: z.string().trim().min(1, "Nama kolom wajib diisi").max(40) });
+export const updateColumnSchema = z.object({ name: z.string().trim().min(1).max(40).optional(), isDone: z.boolean().optional(), position: z.number().int().min(0).optional() });
+const checklistItem = z.object({ id: z.string().min(1).max(40), text: z.string().trim().min(1).max(200), done: z.boolean() });
+export const boardCardSchema = z.object({
+  columnId: z.string().min(1),
+  title: z.string().trim().min(1, "Judul kartu wajib diisi").max(200),
+  description: z.string().max(5000).nullish(),
+  assigneeId: z.string().nullish(),
+  dueDate: z.coerce.date().nullish(),
+});
+export const updateCardSchema = boardCardSchema.omit({ columnId: true }).partial().extend({ checklist: z.array(checklistItem).max(50).optional() });
+export const moveCardSchema = z.object({ columnId: z.string().min(1), index: z.number().int().min(0) });

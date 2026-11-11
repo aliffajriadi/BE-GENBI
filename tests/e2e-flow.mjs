@@ -451,4 +451,28 @@ assert.equal((await ok(call(K, "GET", `/finance/summary${KAS}`))).balance, 7000)
 await ok(call(K, "PUT", `/divisions/${media.id}/access/${a2.id}`, { areas: [] }));
 step("kas divisi: rekening, iuran, verifikasi & buku kas terpisah dari kas organisasi");
 
+// ───── Planning divisi (kanban) ─────
+const kb = await ok(call(A2, "GET", `/boards/${media.id}`));
+assert.deepEqual(kb.columns.map((c) => c.name), ["To do", "Proses", "Review", "Selesai"]);
+assert.equal(kb.canEdit, true); assert.equal(kb.canManage, false);
+assert.equal((await call(A3, "GET", `/boards/${media.id}`)).status, 403); // divisi lain
+assert.equal((await ok(call(S, "GET", `/boards/${media.id}`))).canManage, true); // sekretaris memantau & bisa atur
+assert.equal((await call(A2, "POST", `/boards/${media.id}/columns`, { name: "Ide" })).status, 403);
+const ide = await ok(call(K, "POST", `/boards/${media.id}/columns`, { name: "Ide" }));
+await ok(call(K, "PATCH", `/board-columns/${ide.id}`, { name: "Ide liar", position: 0 }));
+const cols = (await ok(call(A2, "GET", `/boards/${media.id}`))).columns;
+assert.equal(cols[0].name, "Ide liar"); assert.equal(cols.length, 5);
+assert.equal((await call(A2, "POST", `/boards/${media.id}/cards`, { columnId: cols[1].id, title: "Poster", assigneeId: a3.id })).status, 400); // PIC beda divisi
+const c1 = await ok(call(A2, "POST", `/boards/${media.id}/cards`, { columnId: cols[1].id, title: "Poster webinar", assigneeId: a1.id }));
+const c2 = await ok(call(A2, "POST", `/boards/${media.id}/cards`, { columnId: cols[1].id, title: "Caption IG" }));
+await ok(call(A2, "POST", `/board-cards/${c2.id}/move`, { columnId: cols[1].id, index: 0 }));
+assert.deepEqual((await ok(call(A2, "GET", `/boards/${media.id}`))).cards.filter((c) => c.columnId === cols[1].id).map((c) => c.title), ["Caption IG", "Poster webinar"]);
+await ok(call(A2, "POST", `/board-cards/${c1.id}/move`, { columnId: cols[2].id, index: 0 }));
+await ok(call(A2, "PATCH", `/board-cards/${c1.id}`, { checklist: [{ id: "a", text: "Desain", done: true }, { id: "b", text: "Revisi", done: false }] }));
+assert.equal((await call(K, "DELETE", `/board-columns/${cols[2].id}`)).status, 400); // masih ada kartu
+assert.equal((await call(A1, "DELETE", `/board-cards/${c2.id}`)).status, 403); // bukan pembuat
+await ok(call(K, "DELETE", `/board-cards/${c2.id}`));
+await ok(call(K, "DELETE", `/board-columns/${ide.id}`));
+step("planning divisi: kolom custom, kartu, pindah & urutan, hak akses");
+
 console.log("SEMUA LULUS");

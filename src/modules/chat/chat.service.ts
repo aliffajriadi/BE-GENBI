@@ -8,6 +8,7 @@ let io: Server | null = null;
 export const setIo = (s: Server) => { io = s; };
 export const room = (channelId: string) => `ch:${channelId}`;
 export const broadcast = (channelId: string, event: string, payload: unknown) => io?.to(room(channelId)).emit(event, payload);
+export const emitToRoom = (name: string, event: string, payload: unknown) => io?.to(name).emit(event, payload);
 
 // Daftar channel berubah (dibuat/diubah/diarsip): masukkan/keluarkan socket dari room, lalu minta klien memuat ulang daftar.
 export async function syncChannelRooms(channelId: string) {
