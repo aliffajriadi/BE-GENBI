@@ -72,7 +72,7 @@ publicRoutes.patch("/site", auth, requirePermission("article.publish"), validate
 // ───── Versi aplikasi mobile (force update) ─────
 // Publik karena dicek app sebelum login. Diatur System Administrator (settings.manage).
 const APP_SLUG = "app-version";
-const DEFAULT_APP: AppVersion = { minVersion: "0.0.0", latestVersion: "0.0.0", url: "https://genbi.polibatam.243.my.id", message: "" };
+const DEFAULT_APP: AppVersion = { minVersion: "0.0.0", latestVersion: "0.0.0", url: "", message: "" };
 
 publicRoutes.get("/public/app-version", async (_req, res) => {
   const page = await prisma.page.findUnique({ where: { slug: APP_SLUG } });

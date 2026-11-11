@@ -347,11 +347,23 @@ export const appVersionSchema = z
   .object({
     minVersion: semver,
     latestVersion: semver,
-    url: z.string().url("Link unduhan tidak valid").regex(/^https?:\/\//, "Link harus http(s)").max(500),
+    // Kosong = belum ada file untuk diunduh.
+    url: z.union([z.literal(""), z.string().url("Link unduhan tidak valid").regex(/^https?:\/\//, "Link harus http(s)").max(500)]),
     message: z.string().max(300).optional(),
   })
   .refine((v) => compareVersion(v.minVersion, v.latestVersion) <= 0, { message: "Versi minimal tidak boleh lebih baru dari versi terbaru", path: ["minVersion"] });
 export type AppVersion = z.infer<typeof appVersionSchema>;
+
+// Panduan unduh ("artikel mini" di menu Unduh aplikasi), dikelola System Administrator.
+export const downloadGuideSchema = z.object({
+  title: z.string().trim().min(3).max(120),
+  platform: z.enum(["ANDROID", "IOS", "WEB", "OTHER"]),
+  url: z.union([z.literal(""), z.string().url("Link tidak valid").regex(/^https?:\/\//, "Link harus http(s)").max(500)]),
+  buttonLabel: z.string().trim().max(40).optional(),
+  body: z.string().max(20000),
+  order: z.number().int().min(0).max(999).default(0),
+});
+export type DownloadGuide = z.infer<typeof downloadGuideSchema>;
 
 /** -1 / 0 / 1 untuk versi "x.y.z". */
 export function compareVersion(a: string, b: string) {
