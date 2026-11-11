@@ -145,7 +145,7 @@ articlesRoutes.get("/public/articles", async (req, res) => {
   if (req.query.kind === "NEWS" || req.query.kind === "PERSONAL") where.kind = req.query.kind;
   if (req.query.tag) where.tags = { some: { tag: { slug: String(req.query.tag) } } };
   if (req.query.q) where.OR = [{ title: { contains: String(req.query.q) } }, { excerpt: { contains: String(req.query.q) } }];
-  const [rows, total] = await Promise.all([prisma.article.findMany({ where, skip, take, orderBy: { publishedAt: "desc" }, select: { ...publicSelect, contentJson: true } }), prisma.article.count({ where })]);
+  const [rows, total] = await Promise.all([prisma.article.findMany({ where, skip, take, orderBy: req.query.sort === "popular" ? [{ viewCount: "desc" }, { publishedAt: "desc" }] : { publishedAt: "desc" }, select: { ...publicSelect, contentJson: true } }), prisma.article.count({ where })]);
   // Hitung menit baca di server supaya daftar tidak perlu mengirim isi penuh.
   ok(res, rows.map(({ contentJson, ...r }) => ({ ...r, tags: r.tags.map((t) => t.tag), readMinutes: Math.max(1, Math.round(bodyOf({ contentJson }).split(/\s+/).length / 200)) })), { page, total });
 });

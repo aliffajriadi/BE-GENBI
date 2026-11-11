@@ -34,6 +34,20 @@ dashboardRoutes.get("/dashboard", auth, async (req, res) => {
     prisma.actionItem.findMany({ where: { picId: u.id, done: false }, orderBy: { dueDate: "asc" }, take: 5, include: { minute: { select: { event: { select: { title: true } } } } } }),
     u.permissions.has("finance.manage") ? prisma.payment.count({ where: { status: "PENDING" } }) : null,
   ]);
+  // Tren kehadiran: 8 kegiatan terakhir yang absensinya sudah ditutup (yang relevan untuk user ini).
+  const recent = await prisma.event.findMany({
+    where: { deletedAt: null, attendanceStatus: "DONE", ...mine },
+    orderBy: { startAt: "desc" },
+    take: 8,
+    select: { id: true, title: true, startAt: true },
+  });
+  const counts = recent.length
+    ? await prisma.attendance.groupBy({ by: ["eventId", "status"], where: { eventId: { in: recent.map((e) => e.id) } }, _count: true })
+    : [];
+  const attendanceTrend = recent.reverse().map((e) => {
+    const by = Object.fromEntries(counts.filter((c) => c.eventId === e.id).map((c) => [c.status, c._count]));
+    return { ...e, hadir: by.HADIR ?? 0, telat: by.TELAT ?? 0, izin: (by.IZIN ?? 0) + (by.SAKIT ?? 0), alpa: by.ALPA ?? 0 };
+  });
   const rankIdx = board.findIndex((b) => b.userId === u.id);
   ok(res, {
     upcomingEvents: upcoming,
@@ -44,5 +58,6 @@ dashboardRoutes.get("/dashboard", auth, async (req, res) => {
     bills: { count: bills._count, amount: bills._sum.amount ?? 0 },
     tasks,
     pendingPayments,
+    attendanceTrend,
   });
 });
