@@ -1,7 +1,7 @@
 import { Router } from "express";
 import ExcelJS from "exceljs";
 import { prisma, type Prisma } from "../../lib/prisma.js";
-import { auth, requirePermission } from "../../middlewares/auth.js";
+import { auth } from "../../middlewares/auth.js";
 import { validate } from "../../middlewares/validate.js";
 import {
   bankAccountSchema,
@@ -15,14 +15,17 @@ import { AppError } from "../../utils/app-error.js";
 import { paging } from "../../utils/paging.js";
 import { ok } from "../../utils/response.js";
 import { audit } from "../audit/audit.service.js";
-import { notify, usersWithPermission } from "../notifications/notifications.service.js";
+import { notify } from "../notifications/notifications.service.js";
 import { award } from "../points/points.service.js";
 import { BILL_LABEL } from "./billing.js";
 import { generateBills } from "./finance.service.js";
+import { assertTreasury, canManageTreasury, canReadTreasury, treasuryManagers, treasuryOf, type Treasury } from "./treasury.js";
 
 export const financeRoutes = Router();
 const id = (v: unknown) => String(v);
 const rupiah = (n: number) => `Rp${n.toLocaleString("id-ID")}`;
+const kasOf = (q: { kas?: unknown }) => treasuryOf(q.kas);
+const kasLink = (t: Treasury, tab: string) => `/dashboard/finance?tab=${tab}${t ? `&kas=${t}` : ""}`;
 
 // Upload harus milik user sendiri; mengembalikan URL privat untuk disimpan.
 async function ownUpload(uploadId: string, userId: string) {
@@ -34,18 +37,22 @@ async function ownUpload(uploadId: string, userId: string) {
 // ───── Rekening tujuan ─────
 
 financeRoutes.get("/bank-accounts", auth, async (req, res) => {
-  const all = req.user!.permissions.has("finance.manage");
-  ok(res, await prisma.bankAccount.findMany({ where: all ? {} : { isActive: true }, orderBy: { createdAt: "asc" } }));
+  const t = kasOf(req.query);
+  const all = canManageTreasury(req.user!, t);
+  ok(res, await prisma.bankAccount.findMany({ where: { treasuryDivisionId: t, ...(all ? {} : { isActive: true }) }, orderBy: { createdAt: "asc" } }));
 });
 
-financeRoutes.post("/bank-accounts", auth, requirePermission("finance.manage"), validate(bankAccountSchema), async (req, res) => {
-  const b = await prisma.bankAccount.create({ data: req.body });
+financeRoutes.post("/bank-accounts", auth, validate(bankAccountSchema), async (req, res) => {
+  const t = kasOf(req.query);
+  assertTreasury(req.user!, t, "manage");
+  const b = await prisma.bankAccount.create({ data: { ...req.body, treasuryDivisionId: t } });
   await audit(req, "bank.create", "BankAccount", b.id, null, b);
   ok(res, b, undefined, 201);
 });
 
-financeRoutes.patch("/bank-accounts/:id", auth, requirePermission("finance.manage"), validate(bankAccountSchema.partial()), async (req, res) => {
+financeRoutes.patch("/bank-accounts/:id", auth, validate(bankAccountSchema.partial()), async (req, res) => {
   const before = await prisma.bankAccount.findUniqueOrThrow({ where: { id: id(req.params.id) } });
+  assertTreasury(req.user!, before.treasuryDivisionId, "manage");
   const b = await prisma.bankAccount.update({ where: { id: before.id }, data: req.body });
   await audit(req, "bank.update", "BankAccount", b.id, before, b);
   ok(res, b);
@@ -53,9 +60,11 @@ financeRoutes.patch("/bank-accounts/:id", auth, requirePermission("finance.manag
 
 // ───── Rencana iuran ─────
 
-financeRoutes.get("/dues-plans", auth, requirePermission("finance.read"), async (_req, res) => {
-  const plans = await prisma.duesPlan.findMany({ where: { deletedAt: null }, orderBy: { createdAt: "desc" }, include: { division: { select: { name: true } } } });
-  const stats = await prisma.duesBill.groupBy({ by: ["planId", "status"], _count: true, _sum: { amount: true } });
+financeRoutes.get("/dues-plans", auth, async (req, res) => {
+  const t = kasOf(req.query);
+  assertTreasury(req.user!, t, "read");
+  const plans = await prisma.duesPlan.findMany({ where: { deletedAt: null, treasuryDivisionId: t }, orderBy: { createdAt: "desc" }, include: { division: { select: { name: true } } } });
+  const stats = await prisma.duesBill.groupBy({ by: ["planId", "status"], where: { planId: { in: plans.map((p) => p.id) } }, _count: true, _sum: { amount: true } });
   ok(
     res,
     plans.map((p) => {
@@ -66,29 +75,35 @@ financeRoutes.get("/dues-plans", auth, requirePermission("finance.read"), async 
   );
 });
 
-financeRoutes.post("/dues-plans", auth, requirePermission("finance.manage"), validate(duesPlanSchema), async (req, res) => {
-  const plan = await prisma.duesPlan.create({ data: { ...req.body, divisionId: req.body.scope === "DIVISION" ? req.body.divisionId : null } });
+financeRoutes.post("/dues-plans", auth, validate(duesPlanSchema), async (req, res) => {
+  const t = kasOf(req.query);
+  assertTreasury(req.user!, t, "manage");
+  // Kas divisi hanya bisa menagih anggota divisinya sendiri.
+  const target = t ? { scope: "DIVISION" as const, divisionId: t } : { divisionId: req.body.scope === "DIVISION" ? req.body.divisionId : null };
+  const plan = await prisma.duesPlan.create({ data: { ...req.body, ...target, treasuryDivisionId: t } });
   await audit(req, "duesPlan.create", "DuesPlan", plan.id, null, plan);
   const generated = await generateBills(plan);
   ok(res, { ...plan, generated }, undefined, 201);
 });
 
 // Nominal baru hanya berlaku untuk tagihan periode berikutnya.
-financeRoutes.patch("/dues-plans/:id", auth, requirePermission("finance.manage"), validate(updateDuesPlanSchema), async (req, res) => {
+financeRoutes.patch("/dues-plans/:id", auth, validate(updateDuesPlanSchema), async (req, res) => {
   const before = await prisma.duesPlan.findUniqueOrThrow({ where: { id: id(req.params.id) } });
+  assertTreasury(req.user!, before.treasuryDivisionId, "manage");
   const plan = await prisma.duesPlan.update({ where: { id: before.id }, data: req.body });
   await audit(req, "duesPlan.update", "DuesPlan", plan.id, before, plan);
   ok(res, plan);
 });
 
-financeRoutes.post("/dues-plans/:id/generate", auth, requirePermission("finance.manage"), async (req, res) => {
+financeRoutes.post("/dues-plans/:id/generate", auth, async (req, res) => {
   const plan = await prisma.duesPlan.findUniqueOrThrow({ where: { id: id(req.params.id) } });
+  assertTreasury(req.user!, plan.treasuryDivisionId, "manage");
   ok(res, { generated: await generateBills(plan) });
 });
 
 // ───── Tagihan ─────
 
-const billInclude = { plan: { select: { name: true, frequency: true } } } as const;
+const billInclude = { plan: { select: { name: true, frequency: true, treasuryDivisionId: true } } } as const;
 const withLabel = <T extends { periodLabel: string }>(b: T) => ({ ...b, periodName: BILL_LABEL(b.periodLabel) });
 
 financeRoutes.get("/bills/me", auth, async (req, res) => {
@@ -96,9 +111,11 @@ financeRoutes.get("/bills/me", auth, async (req, res) => {
   ok(res, bills.map(withLabel));
 });
 
-financeRoutes.get("/bills", auth, requirePermission("finance.read"), async (req, res) => {
+financeRoutes.get("/bills", auth, async (req, res) => {
+  const t = kasOf(req.query);
+  assertTreasury(req.user!, t, "read");
   const { skip, take, page } = paging(req.query);
-  const where: Prisma.DuesBillWhereInput = {};
+  const where: Prisma.DuesBillWhereInput = { plan: { treasuryDivisionId: t } };
   if (req.query.status) where.status = String(req.query.status) as Prisma.EnumBillStatusFilter["equals"];
   if (req.query.planId) where.planId = String(req.query.planId);
   if (req.query.q) where.user = { name: { contains: String(req.query.q) } };
@@ -113,8 +130,12 @@ financeRoutes.get("/bills", auth, requirePermission("finance.read"), async (req,
 
 financeRoutes.post("/payments", auth, validate(paymentSchema), async (req, res) => {
   const u = req.user!;
-  const bills = await prisma.duesBill.findMany({ where: { id: { in: req.body.billIds }, userId: u.id } });
+  const bills = await prisma.duesBill.findMany({ where: { id: { in: req.body.billIds }, userId: u.id }, include: { plan: { select: { treasuryDivisionId: true } } } });
   if (bills.length !== req.body.billIds.length) throw new AppError("VALIDATION", 400, "Tagihan tidak ditemukan");
+  // Satu bukti transfer = satu rekening tujuan, jadi tagihan dari kas berbeda dibayar terpisah.
+  const kas = [...new Set(bills.map((b) => b.plan.treasuryDivisionId))];
+  if (kas.length > 1) throw new AppError("VALIDATION", 400, "Bayar tagihan kas organisasi dan kas divisi secara terpisah (rekening tujuannya berbeda)");
+  const t = kas[0] ?? null;
   if (bills.some((b) => !["UNPAID", "REJECTED", "OVERDUE"].includes(b.status))) throw new AppError("VALIDATION", 400, "Ada tagihan yang sudah dibayar atau sedang diverifikasi");
   const total = bills.reduce((s, b) => s + b.amount, 0);
   if (req.body.amount < total) throw new AppError("VALIDATION", 400, `Nominal kurang dari total tagihan (${rupiah(total)})`);
@@ -122,7 +143,7 @@ financeRoutes.post("/payments", auth, validate(paymentSchema), async (req, res) 
 
   const payment = await prisma.$transaction(async (tx) => {
     const p = await tx.payment.create({
-      data: { userId: u.id, amount: req.body.amount, transferDate: req.body.transferDate, proofUrl, bills: { create: bills.map((b) => ({ billId: b.id })) } },
+      data: { userId: u.id, amount: req.body.amount, transferDate: req.body.transferDate, proofUrl, treasuryDivisionId: t, bills: { create: bills.map((b) => ({ billId: b.id })) } },
     });
     // Filter status lagi di dalam transaksi supaya dua kiriman bersamaan tidak membayar tagihan yang sama.
     const n = await tx.duesBill.updateMany({ where: { id: { in: bills.map((b) => b.id) }, status: { in: ["UNPAID", "REJECTED", "OVERDUE"] } }, data: { status: "PENDING" } });
@@ -130,7 +151,7 @@ financeRoutes.post("/payments", auth, validate(paymentSchema), async (req, res) 
     return p;
   });
   const me = await prisma.user.findUnique({ where: { id: u.id }, select: { name: true } });
-  await notify(await usersWithPermission("finance.manage"), { type: "PAYMENT_NEW", title: `Bukti bayar dari ${me?.name}`, body: rupiah(payment.amount), link: "/dashboard/finance?tab=verify" });
+  await notify(await treasuryManagers(t), { type: "PAYMENT_NEW", title: `Bukti bayar dari ${me?.name}`, body: rupiah(payment.amount), link: kasLink(t, "verify") });
   ok(res, payment, undefined, 201);
 });
 
@@ -142,7 +163,8 @@ const paymentInclude = {
 
 financeRoutes.get("/payments", auth, async (req, res) => {
   const u = req.user!;
-  const where: Prisma.PaymentWhereInput = u.permissions.has("finance.read") && req.query.mine !== "1" ? {} : { userId: u.id };
+  const t = kasOf(req.query);
+  const where: Prisma.PaymentWhereInput = req.query.mine !== "1" && canReadTreasury(u, t) ? { treasuryDivisionId: t } : { userId: u.id };
   if (req.query.status) where.status = String(req.query.status) as "PENDING" | "VERIFIED" | "REJECTED";
   const { skip, take, page } = paging(req.query);
   const [rows, total] = await Promise.all([
@@ -154,12 +176,13 @@ financeRoutes.get("/payments", auth, async (req, res) => {
 
 financeRoutes.get("/payments/:id", auth, async (req, res) => {
   const p = await prisma.payment.findUniqueOrThrow({ where: { id: id(req.params.id) }, include: paymentInclude });
-  if (p.userId !== req.user!.id && !req.user!.permissions.has("finance.read")) throw new AppError("FORBIDDEN", 403, "Tidak punya akses");
+  if (p.userId !== req.user!.id && !canReadTreasury(req.user!, p.treasuryDivisionId)) throw new AppError("FORBIDDEN", 403, "Tidak punya akses");
   ok(res, { ...p, bills: p.bills.map((x) => withLabel(x.bill)) });
 });
 
-financeRoutes.post("/payments/:id/verify", auth, requirePermission("finance.manage"), async (req, res) => {
+financeRoutes.post("/payments/:id/verify", auth, async (req, res) => {
   const p = await prisma.payment.findUniqueOrThrow({ where: { id: id(req.params.id) }, include: { bills: { include: { bill: { include: billInclude } } }, user: { select: { name: true } } } });
+  assertTreasury(req.user!, p.treasuryDivisionId, "manage");
   if (p.status !== "PENDING") throw new AppError("INVALID_STATE", 409, "Pembayaran sudah diproses");
   const periodId = (await prisma.period.findFirstOrThrow({ where: { isActive: true } })).id;
 
@@ -169,7 +192,7 @@ financeRoutes.post("/payments/:id/verify", auth, requirePermission("finance.mana
     if (n.count === 0) throw new AppError("INVALID_STATE", 409, "Pembayaran sudah diproses");
     await tx.duesBill.updateMany({ where: { id: { in: p.bills.map((b) => b.billId) } }, data: { status: "PAID" } });
     await tx.cashTransaction.create({
-      data: { type: "IN", category: "Kas anggota", amount: p.amount, date: p.transferDate, description: `${p.user.name}: ${p.bills.map((b) => `${b.bill.plan.name} ${BILL_LABEL(b.bill.periodLabel)}`).join(", ")}`, refType: "Payment", refId: p.id },
+      data: { treasuryDivisionId: p.treasuryDivisionId, type: "IN", category: "Kas anggota", amount: p.amount, date: p.transferDate, description: `${p.user.name}: ${p.bills.map((b) => `${b.bill.plan.name} ${BILL_LABEL(b.bill.periodLabel)}`).join(", ")}`, refType: "Payment", refId: p.id },
     });
     for (const { bill } of p.bills) {
       if (p.transferDate <= bill.dueDate) await award(tx, { userId: p.userId, periodId, ruleKey: "KAS_ON_TIME", sourceType: "KAS", sourceId: bill.id, createdById: req.user!.id, note: `Bayar kas tepat waktu: ${BILL_LABEL(bill.periodLabel)}` });
@@ -180,8 +203,9 @@ financeRoutes.post("/payments/:id/verify", auth, requirePermission("finance.mana
   ok(res, { id: p.id, status: "VERIFIED" });
 });
 
-financeRoutes.post("/payments/:id/reject", auth, requirePermission("finance.manage"), validate(rejectSchema), async (req, res) => {
+financeRoutes.post("/payments/:id/reject", auth, validate(rejectSchema), async (req, res) => {
   const p = await prisma.payment.findUniqueOrThrow({ where: { id: id(req.params.id) }, include: { bills: true } });
+  assertTreasury(req.user!, p.treasuryDivisionId, "manage");
   if (p.status !== "PENDING") throw new AppError("INVALID_STATE", 409, "Pembayaran sudah diproses");
   await prisma.$transaction(async (tx) => {
     await tx.payment.update({ where: { id: p.id }, data: { status: "REJECTED", rejectReason: req.body.reason, verifiedById: req.user!.id } });
@@ -194,41 +218,50 @@ financeRoutes.post("/payments/:id/reject", auth, requirePermission("finance.mana
 
 // ───── Buku kas ─────
 
-financeRoutes.get("/cash-transactions", auth, requirePermission("finance.read"), async (req, res) => {
+financeRoutes.get("/cash-transactions", auth, async (req, res) => {
+  const t = kasOf(req.query);
+  assertTreasury(req.user!, t, "read");
   const { skip, take, page } = paging(req.query);
-  const where: Prisma.CashTransactionWhereInput = { deletedAt: null };
+  const where: Prisma.CashTransactionWhereInput = { deletedAt: null, treasuryDivisionId: t };
   if (req.query.type) where.type = String(req.query.type) as "IN" | "OUT";
   if (req.query.from || req.query.to) where.date = { ...(req.query.from ? { gte: new Date(String(req.query.from)) } : {}), ...(req.query.to ? { lt: new Date(String(req.query.to)) } : {}) };
   const [rows, total] = await Promise.all([prisma.cashTransaction.findMany({ where, skip, take, orderBy: [{ date: "desc" }, { createdAt: "desc" }] }), prisma.cashTransaction.count({ where })]);
   ok(res, rows, { page, total });
 });
 
-financeRoutes.post("/cash-transactions", auth, requirePermission("finance.manage"), validate(cashTransactionSchema), async (req, res) => {
+financeRoutes.post("/cash-transactions", auth, validate(cashTransactionSchema), async (req, res) => {
+  const kas = kasOf(req.query);
+  assertTreasury(req.user!, kas, "manage");
   const { attachmentId, ...data } = req.body;
-  const t = await prisma.cashTransaction.create({ data: { ...data, attachmentUrl: attachmentId ? await ownUpload(attachmentId, req.user!.id) : undefined } });
+  const t = await prisma.cashTransaction.create({ data: { ...data, treasuryDivisionId: kas, attachmentUrl: attachmentId ? await ownUpload(attachmentId, req.user!.id) : undefined } });
   await audit(req, "cash.create", "CashTransaction", t.id, null, t);
   ok(res, t, undefined, 201);
 });
 
-financeRoutes.delete("/cash-transactions/:id", auth, requirePermission("finance.manage"), async (req, res) => {
+financeRoutes.delete("/cash-transactions/:id", auth, async (req, res) => {
   const t = await prisma.cashTransaction.findUniqueOrThrow({ where: { id: id(req.params.id) } });
+  assertTreasury(req.user!, t.treasuryDivisionId, "manage");
   if (t.refType === "Payment") throw new AppError("VALIDATION", 400, "Transaksi dari pembayaran kas tidak bisa dihapus");
   await prisma.cashTransaction.update({ where: { id: t.id }, data: { deletedAt: new Date() } });
   await audit(req, "cash.delete", "CashTransaction", t.id, t, null);
   ok(res, null);
 });
 
-financeRoutes.get("/finance/summary", auth, requirePermission("finance.read"), async (_req, res) => {
+financeRoutes.get("/finance/summary", auth, async (req, res) => {
+  const t = kasOf(req.query);
+  assertTreasury(req.user!, t, "read");
+  const cashT = { deletedAt: null, treasuryDivisionId: t };
+  const billT = { plan: { treasuryDivisionId: t } };
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const sixAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1);
   const [sums, month, pending, overdue, unpaid, recent] = await Promise.all([
-    prisma.cashTransaction.groupBy({ by: ["type"], where: { deletedAt: null }, _sum: { amount: true } }),
-    prisma.cashTransaction.groupBy({ by: ["type"], where: { deletedAt: null, date: { gte: monthStart } }, _sum: { amount: true } }),
-    prisma.payment.count({ where: { status: "PENDING" } }),
-    prisma.duesBill.aggregate({ where: { status: "OVERDUE" }, _count: true, _sum: { amount: true } }),
-    prisma.duesBill.aggregate({ where: { status: { in: ["UNPAID", "REJECTED", "OVERDUE"] } }, _sum: { amount: true } }),
-    prisma.cashTransaction.findMany({ where: { deletedAt: null, date: { gte: sixAgo } }, select: { type: true, amount: true, date: true } }),
+    prisma.cashTransaction.groupBy({ by: ["type"], where: cashT, _sum: { amount: true } }),
+    prisma.cashTransaction.groupBy({ by: ["type"], where: { ...cashT, date: { gte: monthStart } }, _sum: { amount: true } }),
+    prisma.payment.count({ where: { status: "PENDING", treasuryDivisionId: t } }),
+    prisma.duesBill.aggregate({ where: { ...billT, status: "OVERDUE" }, _count: true, _sum: { amount: true } }),
+    prisma.duesBill.aggregate({ where: { ...billT, status: { in: ["UNPAID", "REJECTED", "OVERDUE"] } }, _sum: { amount: true } }),
+    prisma.cashTransaction.findMany({ where: { ...cashT, date: { gte: sixAgo } }, select: { type: true, amount: true, date: true } }),
   ]);
   const sum = (rows: typeof sums, t: "IN" | "OUT") => rows.find((r) => r.type === t)?._sum.amount ?? 0;
   const months = Array.from({ length: 6 }, (_, i) => {
@@ -252,12 +285,14 @@ financeRoutes.get("/finance/summary", auth, requirePermission("finance.read"), a
 });
 
 // Laporan Excel: buku kas + rekap tagihan per anggota.
-financeRoutes.get("/finance/report/export", auth, requirePermission("finance.read"), async (req, res) => {
+financeRoutes.get("/finance/report/export", auth, async (req, res) => {
+  const t = kasOf(req.query);
+  assertTreasury(req.user!, t, "read");
   const from = req.query.from ? new Date(String(req.query.from)) : new Date(new Date().getFullYear(), 0, 1);
   const to = req.query.to ? new Date(String(req.query.to)) : new Date();
   const [cash, bills] = await Promise.all([
-    prisma.cashTransaction.findMany({ where: { deletedAt: null, date: { gte: from, lte: to } }, orderBy: { date: "asc" } }),
-    prisma.duesBill.findMany({ include: { user: { select: { name: true } }, plan: { select: { name: true } } }, orderBy: [{ user: { name: "asc" } }, { dueDate: "asc" }] }),
+    prisma.cashTransaction.findMany({ where: { deletedAt: null, treasuryDivisionId: t, date: { gte: from, lte: to } }, orderBy: { date: "asc" } }),
+    prisma.duesBill.findMany({ where: { plan: { treasuryDivisionId: t } }, include: { user: { select: { name: true } }, plan: { select: { name: true } } }, orderBy: [{ user: { name: "asc" } }, { dueDate: "asc" }] }),
   ]);
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet("Buku kas");

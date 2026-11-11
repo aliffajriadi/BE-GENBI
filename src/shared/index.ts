@@ -338,6 +338,8 @@ export const DIVISION_AREAS = {
   events: { label: "Kegiatan & rapat divisi", desc: "Buat rapat/kegiatan divisi, buka absensi, atur peserta, putuskan izin", permissions: ["event.create", "leave.decide"] },
   chat: { label: "Diskusi divisi", desc: "Buat & atur diskusi untuk anggota divisi, moderasi pesan", permissions: ["chat.moderate"] },
   points: { label: "Poin anggota divisi", desc: "Beri atau koreksi poin keaktifan anggota divisi", permissions: ["points.adjust"] },
+  // Tanpa permission global: akses kas divisi dicek langsung (finance.manage = kas organisasi milik Bendahara).
+  finance: { label: "Kas divisi", desc: "Buat iuran divisi, atur rekening, verifikasi bukti bayar & catat buku kas divisi", permissions: [] },
 } as const satisfies Record<string, { label: string; desc: string; permissions: PermissionKey[] }>;
 export type DivisionArea = keyof typeof DIVISION_AREAS;
 export const divisionAccessSchema = z.object({ areas: z.array(z.enum(Object.keys(DIVISION_AREAS) as [DivisionArea, ...DivisionArea[]])) });

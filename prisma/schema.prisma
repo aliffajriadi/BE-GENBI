@@ -428,14 +428,17 @@ model PointLedger {
 // ───────────── Keuangan ─────────────
 
 model BankAccount {
-  id            String   @id @default(cuid())
-  bankName      String
-  accountNumber String
-  accountName   String
-  qrisImageUrl  String?
-  isActive      Boolean  @default(true)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id                 String   @id @default(cuid())
+  bankName           String
+  accountNumber      String
+  accountName        String
+  qrisImageUrl       String?
+  treasuryDivisionId String? // kas pemilik: null = kas organisasi (Bendahara), selain itu id divisi (kas divisi)
+  isActive           Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([treasuryDivisionId])
 }
 
 enum DuesFrequency {
@@ -445,20 +448,23 @@ enum DuesFrequency {
 }
 
 model DuesPlan {
-  id         String        @id @default(cuid())
-  name       String
-  amount     Int
-  frequency  DuesFrequency
-  dueDay     Int? // MONTHLY/SEMESTER: tanggal jatuh tempo di bulan tagihan
-  dueDate    DateTime? // ONCE (iuran insidental)
-  scope      EventScope    @default(ALL)
-  divisionId String?
-  isActive   Boolean       @default(true)
-  division   Division?     @relation(fields: [divisionId], references: [id])
-  createdAt  DateTime      @default(now())
-  updatedAt  DateTime      @updatedAt
-  deletedAt  DateTime?
-  bills      DuesBill[]
+  id                 String        @id @default(cuid())
+  name               String
+  amount             Int
+  frequency          DuesFrequency
+  dueDay             Int? // MONTHLY/SEMESTER: tanggal jatuh tempo di bulan tagihan
+  dueDate            DateTime? // ONCE (iuran insidental)
+  scope              EventScope    @default(ALL)
+  divisionId         String?
+  treasuryDivisionId String? // kas pemilik: null = kas organisasi (Bendahara), selain itu id divisi (kas divisi)
+  isActive           Boolean       @default(true)
+  division           Division?     @relation(fields: [divisionId], references: [id])
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+  deletedAt          DateTime?
+  bills              DuesBill[]
+
+  @@index([treasuryDivisionId])
 }
 
 enum BillStatus {
@@ -493,19 +499,22 @@ enum PaymentStatus {
 }
 
 model Payment {
-  id           String        @id @default(cuid())
-  userId       String
-  amount       Int
-  transferDate DateTime
-  proofUrl     String
-  status       PaymentStatus @default(PENDING)
-  verifiedById String?
-  rejectReason String?
-  user         User          @relation("PaymentUser", fields: [userId], references: [id])
-  verifiedBy   User?         @relation("PaymentVerifier", fields: [verifiedById], references: [id])
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-  bills        PaymentBill[]
+  id                 String        @id @default(cuid())
+  userId             String
+  amount             Int
+  transferDate       DateTime
+  proofUrl           String
+  treasuryDivisionId String? // kas pemilik: null = kas organisasi (Bendahara), selain itu id divisi (kas divisi)
+  status             PaymentStatus @default(PENDING)
+  verifiedById       String?
+  rejectReason       String?
+  user               User          @relation("PaymentUser", fields: [userId], references: [id])
+  verifiedBy         User?         @relation("PaymentVerifier", fields: [verifiedById], references: [id])
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+  bills              PaymentBill[]
+
+  @@index([treasuryDivisionId])
 }
 
 model PaymentBill {
@@ -523,18 +532,21 @@ enum CashType {
 }
 
 model CashTransaction {
-  id            String    @id @default(cuid())
-  type          CashType
-  category      String
-  amount        Int
-  date          DateTime
-  description   String?
-  attachmentUrl String?
-  refType       String?
-  refId         String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  deletedAt     DateTime?
+  id                 String    @id @default(cuid())
+  type               CashType
+  category           String
+  amount             Int
+  date               DateTime
+  description        String?
+  attachmentUrl      String?
+  treasuryDivisionId String? // kas pemilik: null = kas organisasi (Bendahara), selain itu id divisi (kas divisi)
+  refType            String?
+  refId              String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  deletedAt          DateTime?
+
+  @@index([treasuryDivisionId])
 }
 
 // ───────────── Administrasi ─────────────

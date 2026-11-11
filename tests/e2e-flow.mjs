@@ -414,4 +414,41 @@ assert.equal((await call(A2, "POST", "/events", evBody("Rapat lagi"))).status, 4
 await ok(call(S, "PUT", `/divisions/${riset.id}/access/${a3.id}`, { areas: ["events"] })); // sekretaris bisa semua divisi
 step("akses diskusi divisi, cabut akses langsung berlaku");
 
+// ───── Kas divisi: terpisah dari kas organisasi ─────
+const KAS = `?kas=${media.id}`;
+assert.equal((await call(A2, "POST", `/bank-accounts${KAS}`, { bankName: "BRI", accountNumber: "998877", accountName: "Kadiv Media" })).status, 403);
+assert.equal((await call(K, "POST", `/bank-accounts?kas=${riset.id}`, { bankName: "BRI", accountNumber: "111222", accountName: "Orang lain" })).status, 403); // divisi lain
+assert.equal((await call(K, "POST", "/bank-accounts", { bankName: "BRI", accountNumber: "111222", accountName: "Orang lain" })).status, 403); // kas organisasi = Bendahara
+await ok(call(K, "POST", `/bank-accounts${KAS}`, { bankName: "BRI", accountNumber: "998877", accountName: "Kadiv Media" }));
+const dplan = await ok(call(K, "POST", `/dues-plans${KAS}`, { name: "Kas divisi media", amount: 10000, frequency: "ONCE", dueDate: new Date(Date.now() + 7 * 864e5), scope: "ALL" }));
+assert.equal(dplan.scope, "DIVISION"); assert.equal(dplan.divisionId, media.id); assert.equal(dplan.generated, 3); // hanya anggota media
+const orgAcc = await ok(call(A2, "GET", "/bank-accounts"));
+const divAcc = await ok(call(A2, "GET", `/bank-accounts${KAS}`));
+assert.ok(orgAcc.every((a) => a.accountNumber !== "998877") && divAcc.some((a) => a.accountNumber === "998877"));
+const budiBills = await ok(call(A2, "GET", "/bills/me"));
+const divBill = budiBills.find((b) => b.plan.treasuryDivisionId === media.id);
+assert.ok(divBill && divBill.amount === 10000);
+const orgOpen = budiBills.find((b) => b.plan.treasuryDivisionId === null && ["UNPAID", "OVERDUE", "REJECTED"].includes(b.status));
+const dp = (await upload(A2, PNG, "bukti.png")).data;
+if (orgOpen) assert.equal((await call(A2, "POST", "/payments", { billIds: [divBill.id, orgOpen.id], amount: 99999, transferDate: new Date(), proofId: dp.id })).status, 400); // beda rekening
+const dpay = await ok(call(A2, "POST", "/payments", { billIds: [divBill.id], amount: 10000, transferDate: new Date(), proofId: dp.id }));
+assert.equal(dpay.treasuryDivisionId, media.id);
+assert.ok(!(await ok(call(BEN, "GET", "/payments?status=PENDING"))).some((p) => p.id === dpay.id)); // antrean bendahara bersih
+assert.equal((await call(BEN, "POST", `/payments/${dpay.id}/verify`)).status, 403); // bendahara tidak mengelola kas divisi
+assert.ok((await ok(call(K, "GET", `/payments?status=PENDING&kas=${media.id}`))).some((p) => p.id === dpay.id));
+assert.equal((await call(K, "GET", `/files/${dp.id}`)).status, 200); // kadiv bisa lihat bukti
+assert.equal((await call(A3, "GET", `/files/${dp.id}`)).status, 403);
+await ok(call(K, "POST", `/payments/${dpay.id}/verify`));
+const dsum = await ok(call(K, "GET", `/finance/summary${KAS}`));
+assert.equal(dsum.balance, 10000);
+const osum = await ok(call(BEN, "GET", "/finance/summary"));
+assert.ok(!(await ok(call(BEN, "GET", "/cash-transactions?limit=100"))).some((t) => t.refId === dpay.id)); // tidak masuk buku kas organisasi
+assert.equal(typeof osum.balance, "number");
+assert.equal((await call(A3, "GET", `/finance/summary${KAS}`)).status, 403);
+await ok(call(K, "PUT", `/divisions/${media.id}/access/${a2.id}`, { areas: ["finance"] })); // bendahara divisi
+await ok(call(A2, "POST", `/cash-transactions${KAS}`, { type: "OUT", category: "Konsumsi", amount: 3000, date: new Date() }));
+assert.equal((await ok(call(K, "GET", `/finance/summary${KAS}`))).balance, 7000);
+await ok(call(K, "PUT", `/divisions/${media.id}/access/${a2.id}`, { areas: [] }));
+step("kas divisi: rekening, iuran, verifikasi & buku kas terpisah dari kas organisasi");
+
 console.log("SEMUA LULUS");

@@ -2,6 +2,7 @@ import { Router } from "express";
 import { prisma } from "../../lib/prisma.js";
 import { auth } from "../../middlewares/auth.js";
 import { ok } from "../../utils/response.js";
+import { canManageTreasury } from "../finance/treasury.js";
 
 export const dashboardRoutes = Router();
 
@@ -29,10 +30,12 @@ dashboardRoutes.get("/dashboard", auth, async (req, res) => {
     u.permissions.has("settings.manage") ? prisma.user.count({ where: { status: "ACTIVE", deletedAt: null } }) : null,
   ]);
 
+  const kas = [null, u.divisionId].filter((t, i) => (i === 0 || t) && canManageTreasury(u, t));
   const [bills, tasks, pendingPayments] = await Promise.all([
     prisma.duesBill.aggregate({ where: { userId: u.id, status: { in: ["UNPAID", "REJECTED", "OVERDUE"] } }, _count: true, _sum: { amount: true } }),
     prisma.actionItem.findMany({ where: { picId: u.id, done: false }, orderBy: { dueDate: "asc" }, take: 5, include: { minute: { select: { event: { select: { title: true } } } } } }),
-    u.permissions.has("finance.manage") ? prisma.payment.count({ where: { status: "PENDING" } }) : null,
+    // Antrean verifikasi dari kas yang dikelola user ini (organisasi dan/atau divisinya).
+    kas.length ? prisma.payment.count({ where: { status: "PENDING", OR: kas.map((t) => ({ treasuryDivisionId: t })) } }) : null,
   ]);
   // Tren kehadiran: 8 kegiatan terakhir yang absensinya sudah ditutup (yang relevan untuk user ini).
   const recent = await prisma.event.findMany({
