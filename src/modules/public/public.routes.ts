@@ -2,7 +2,7 @@ import { Router } from "express";
 import { prisma } from "../../lib/prisma.js";
 import { auth, requirePermission } from "../../middlewares/auth.js";
 import { validate } from "../../middlewares/validate.js";
-import { siteSchema, type SiteContent } from "../../shared/index.js";
+import { appVersionSchema, siteSchema, type AppVersion, type SiteContent } from "../../shared/index.js";
 import { AppError } from "../../utils/app-error.js";
 import { ok } from "../../utils/response.js";
 import { audit } from "../audit/audit.service.js";
@@ -66,6 +66,24 @@ publicRoutes.patch("/site", auth, requirePermission("article.publish"), validate
   const before = await prisma.page.findUnique({ where: { slug: SITE_SLUG } });
   await prisma.page.upsert({ where: { slug: SITE_SLUG }, update: { contentJson: body }, create: { slug: SITE_SLUG, title: "Beranda", contentJson: body } });
   await audit(req, "site.update", "Page", SITE_SLUG, before?.contentJson ?? null, body);
+  ok(res, body);
+});
+
+// ───── Versi aplikasi mobile (force update) ─────
+// Publik karena dicek app sebelum login. Diatur System Administrator (settings.manage).
+const APP_SLUG = "app-version";
+const DEFAULT_APP: AppVersion = { minVersion: "0.0.0", latestVersion: "0.0.0", url: "https://genbi.polibatam.243.my.id", message: "" };
+
+publicRoutes.get("/public/app-version", async (_req, res) => {
+  const page = await prisma.page.findUnique({ where: { slug: APP_SLUG } });
+  ok(res, { ...DEFAULT_APP, ...((page?.contentJson as Partial<AppVersion> | null) ?? {}) });
+});
+
+publicRoutes.put("/app-version", auth, requirePermission("settings.manage"), validate(appVersionSchema), async (req, res) => {
+  const body = req.body as AppVersion;
+  const before = await prisma.page.findUnique({ where: { slug: APP_SLUG } });
+  await prisma.page.upsert({ where: { slug: APP_SLUG }, update: { contentJson: body }, create: { slug: APP_SLUG, title: "Versi aplikasi", contentJson: body } });
+  await audit(req, "app_version.update", "Page", APP_SLUG, before?.contentJson ?? null, body);
   ok(res, body);
 });
 

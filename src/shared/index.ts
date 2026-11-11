@@ -341,6 +341,25 @@ export const siteSchema = z.object({
 });
 export type SiteContent = z.infer<typeof siteSchema>;
 
+// Versi aplikasi mobile: di bawah minVersion = wajib update (app diblokir); di bawah latestVersion = disarankan.
+const semver = z.string().regex(/^\d+\.\d+\.\d+$/, "Format versi: 1.2.3");
+export const appVersionSchema = z
+  .object({
+    minVersion: semver,
+    latestVersion: semver,
+    url: z.string().url("Link unduhan tidak valid").regex(/^https?:\/\//, "Link harus http(s)").max(500),
+    message: z.string().max(300).optional(),
+  })
+  .refine((v) => compareVersion(v.minVersion, v.latestVersion) <= 0, { message: "Versi minimal tidak boleh lebih baru dari versi terbaru", path: ["minVersion"] });
+export type AppVersion = z.infer<typeof appVersionSchema>;
+
+/** -1 / 0 / 1 untuk versi "x.y.z". */
+export function compareVersion(a: string, b: string) {
+  const x = a.split(".").map(Number), y = b.split(".").map(Number);
+  for (let i = 0; i < 3; i++) if ((x[i] ?? 0) !== (y[i] ?? 0)) return (x[i] ?? 0) < (y[i] ?? 0) ? -1 : 1;
+  return 0;
+}
+
 // ───────────── Akses divisi yang bisa didelegasikan Kadiv ─────────────
 
 export const DIVISION_AREAS = {
