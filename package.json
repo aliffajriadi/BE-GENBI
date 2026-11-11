@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch --env-file=.env src/server.ts",
-    "start": "tsx --env-file=.env src/server.ts",
+    "start": "prisma migrate deploy && prisma generate && tsx --env-file=.env src/server.ts",
     "typecheck": "tsc --noEmit",
     "test": "DATABASE_URL=mysql://t@localhost/t JWT_SECRET=test-secret-0123456789 QR_SECRET=qr-secret-0123456789 tsx --test tests/*.test.ts",
     "test:e2e": "node tests/e2e-flow.mjs && node tests/chat-burst.mjs",
