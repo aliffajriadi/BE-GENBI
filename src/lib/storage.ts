@@ -5,7 +5,7 @@ import path from "node:path";
 // Satu pintu ke penyimpanan file (PRD bagian 12). shortcut: disk lokal; ganti isi fungsi ini untuk pindah ke R2/MinIO.
 const ROOT = path.resolve(process.env.STORAGE_DIR ?? "storage");
 
-export const MAX_UPLOAD = 5 * 1024 * 1024;
+export const MAX_UPLOAD = 2 * 1024 * 1024; // 2 MB per file (foto dikecilkan otomatis di browser sebelum dikirim)
 
 // Cek isi file (magic bytes), bukan cuma ekstensi/mimetype dari klien.
 const SIGNATURES: { mime: string; ext: string; test: (b: Buffer) => boolean }[] = [

@@ -89,7 +89,7 @@ publicRoutes.get("/public/members/:id", async (req, res) => {
   const u = await prisma.user.findFirst({
     where: { id: String(req.params.id), ...visible },
     select: {
-      ...publicProfile, coverUrl: true, bio: true, instagram: true, tiktok: true, website: true,
+      ...publicProfile, coverUrl: true, bio: true, instagram: true, tiktok: true, linkedin: true, website: true,
       memberships: { orderBy: { createdAt: "desc" }, select: { position: true, role: { select: { key: true, name: true } }, division: { select: { name: true } }, period: { select: { name: true, isActive: true } } } },
       articles: {
         where: { status: "PUBLISHED", deletedAt: null }, orderBy: { publishedAt: "desc" }, take: 20,

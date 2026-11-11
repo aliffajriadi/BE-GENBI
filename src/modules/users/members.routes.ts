@@ -9,7 +9,7 @@ import { ok } from "../../utils/response.js";
 // Hanya data yang pantas dilihat sesama anggota; email, HP, NIM tetap lewat /users (butuh user.read).
 export const membersRoutes = Router();
 
-const safeUser = { id: true, name: true, avatarUrl: true, coverUrl: true, bio: true, instagram: true, tiktok: true, website: true, campus: true, major: true, batch: true, status: true } as const;
+const safeUser = { id: true, name: true, avatarUrl: true, coverUrl: true, bio: true, instagram: true, tiktok: true, linkedin: true, website: true, campus: true, major: true, batch: true, status: true } as const;
 
 membersRoutes.get("/members", auth, async (req, res) => {
   const { skip, take, page } = paging({ ...req.query, limit: req.query.limit ?? 48 });

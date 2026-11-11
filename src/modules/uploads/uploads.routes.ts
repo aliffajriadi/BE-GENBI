@@ -16,7 +16,7 @@ export const fileUrl = (u: { id: string; key: string; isPrivate: boolean }) => (
 
 uploadsRoutes.post("/uploads", auth, (req, res, next) => {
   upload.single("file")(req, res, (err) => {
-    if (err) return next(new AppError("UPLOAD_INVALID", 400, err.code === "LIMIT_FILE_SIZE" ? "Ukuran file maksimal 5 MB" : "Upload gagal"));
+    if (err) return next(new AppError("UPLOAD_INVALID", 400, err.code === "LIMIT_FILE_SIZE" ? "Ukuran file maksimal 2 MB" : "Upload gagal"));
     next();
   });
 }, async (req, res) => {

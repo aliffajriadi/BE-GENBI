@@ -197,6 +197,14 @@ const handle = (max: number) =>
     .pipe(z.string().max(max).regex(/^[A-Za-z0-9._]*$/, "Username hanya huruf, angka, titik, dan garis bawah"))
     .transform((v) => v || null);
 
+// LinkedIn: simpan slug dari linkedin.com/in/<slug> (huruf, angka, tanda hubung).
+const linkedin = z
+  .string()
+  .trim()
+  .transform((v) => v.replace(/^(https?:\/\/)?([a-z]{2,3}\.)?(www\.)?linkedin\.com\/in\//i, "").replace(/^@/, "").replace(/[/?#].*$/, ""))
+  .pipe(z.string().max(100).regex(/^([A-Za-z0-9-]{3,100})?$/, "Isi username LinkedIn (bagian setelah linkedin.com/in/)"))
+  .transform((v) => v || null);
+
 export const updateMeSchema = z.object({
   name: z.string().min(2).optional(),
   phone: z.string().max(30).nullish(),
@@ -209,6 +217,7 @@ export const updateMeSchema = z.object({
   // Username saja; "@" dan URL lengkap dibuang supaya tautan selalu dibuat server-side ke domain resmi.
   instagram: handle(30).nullish(),
   tiktok: handle(24).nullish(),
+  linkedin: linkedin.nullish(),
   website: z.url({ protocol: /^https?$/, message: "Website harus diawali http:// atau https://" }).max(200).nullish(),
   profilePublic: z.boolean().optional(),
 });

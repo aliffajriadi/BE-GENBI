@@ -31,6 +31,7 @@ model User {
   bio           String?    @db.VarChar(300)
   instagram     String? // username tanpa @
   tiktok        String? // username tanpa @
+  linkedin      String? // slug profil: linkedin.com/in/<slug>
   website       String?
   profilePublic Boolean    @default(true) // tampil di halaman Anggota web publik (anggota bisa menyembunyikan)
   status        UserStatus @default(ACTIVE)
