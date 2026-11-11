@@ -475,4 +475,48 @@ await ok(call(K, "DELETE", `/board-cards/${c2.id}`));
 await ok(call(K, "DELETE", `/board-columns/${ide.id}`));
 step("planning divisi: kolom custom, kartu, pindah & urutan, hak akses");
 
+// ───── Impor akun massal dari Excel ─────
+{
+  const ExcelJS = (await import("exceljs")).default;
+  const tpl = await fetch(B + "/users/import/template", { headers: { Authorization: `Bearer ${S}` } });
+  assert.equal(tpl.status, 200);
+  const twb = new ExcelJS.Workbook();
+  await twb.xlsx.load(await tpl.arrayBuffer());
+  assert.ok(twb.getWorksheet("Anggota") && twb.getWorksheet("Daftar pilihan"));
+  assert.equal((await fetch(B + "/users/import/template", { headers: { Authorization: `Bearer ${A1}` } })).status, 403);
+
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet("Anggota");
+  ws.addRow(["Nama*", "Email*", "Role", "Divisi", "Jabatan", "Password"]);
+  ws.addRow(["Impor Satu", `impor1-${sfx}@t.id`, "Anggota", media.name, "Staf", "password123"]);
+  ws.addRow(["Impor Dua", `impor2-${sfx}@t.id`, "", media.name.toUpperCase()]); // role kosong = Anggota, divisi tak peka huruf
+  ws.addRow(["Salah Email", "bukan-email", "Anggota"]);
+  ws.addRow(["Sudah Ada", `budi-${sfx}@t.id`, "Anggota"]);
+  ws.addRow(["Kadiv Tanpa Divisi", `impor3-${sfx}@t.id`, "Kepala Divisi"]);
+  ws.addRow(["Dobel", `impor1-${sfx}@t.id`]);
+  const buf = await wb.xlsx.writeBuffer();
+  const send = async (q) => {
+    const fd = new FormData();
+    fd.append("file", new Blob([buf]), "anggota.xlsx");
+    return (await fetch(B + "/users/import" + q, { method: "POST", headers: { Authorization: `Bearer ${S}` }, body: fd })).json();
+  };
+  const dry = (await send("?dryRun=1")).data;
+  assert.deepEqual(dry.summary, { total: 6, valid: 2, invalid: 4, created: 0 });
+  assert.match(dry.rows.find((r) => r.name === "Sudah Ada").message, /sudah terdaftar/);
+  assert.match(dry.rows.find((r) => r.name === "Dobel").message, /dobel/);
+  assert.match(dry.rows.find((r) => r.name === "Kadiv Tanpa Divisi").message, /wajib/);
+  assert.equal((await ok(call(S, "GET", "/users?q=Impor&limit=50"))).filter((u) => u.email.startsWith("impor")).length, 0); // pratinjau tidak membuat akun
+  const done = (await send("")).data;
+  assert.equal(done.summary.created, 2);
+  const gen = done.rows.find((r) => r.name === "Impor Dua");
+  assert.equal(gen.status, "created"); assert.ok(gen.password?.length >= 8);
+  assert.equal(done.rows.find((r) => r.name === "Impor Satu").password, undefined); // password dari Excel tidak dikembalikan
+  await login(`impor1-${sfx}@t.id`, "password123");
+  const T2 = await login(`impor2-${sfx}@t.id`, gen.password);
+  assert.equal((await ok(call(T2, "GET", "/me"))).division.id, media.id);
+  const fd = new FormData(); fd.append("file", new Blob(["bukan excel"]), "x.xlsx");
+  assert.equal((await fetch(B + "/users/import", { method: "POST", headers: { Authorization: `Bearer ${S}` }, body: fd })).status, 400);
+  step("impor akun dari Excel: template, pratinjau, validasi, password otomatis");
+}
+
 console.log("SEMUA LULUS");

@@ -12,6 +12,7 @@ import { pointsRoutes } from "./modules/points/points.routes.js";
 import { usersRoutes } from "./modules/users/users.routes.js";
 import { membersRoutes } from "./modules/users/members.routes.js";
 import { divisionAccessRoutes } from "./modules/users/division-access.routes.js";
+import { userImportRoutes } from "./modules/users/import.routes.js";
 import { administrationRoutes } from "./modules/administration/administration.routes.js";
 import { articlesRoutes } from "./modules/articles/articles.routes.js";
 import { financeRoutes } from "./modules/finance/finance.routes.js";
@@ -36,7 +37,7 @@ app.use("/storage/public", express.static(publicDir, { maxAge: "7d" }));
 app.get("/health", (_req, res) => res.json({ ok: true }));
 
 const v1 = express.Router();
-v1.use(publicRoutes, authRoutes, usersRoutes, membersRoutes, divisionAccessRoutes, eventsRoutes, pointsRoutes, dashboardRoutes, auditRoutes, uploadsRoutes, notificationsRoutes, financeRoutes, articlesRoutes, administrationRoutes, chatRoutes, planningRoutes);
+v1.use(publicRoutes, authRoutes, userImportRoutes, usersRoutes, membersRoutes, divisionAccessRoutes, eventsRoutes, pointsRoutes, dashboardRoutes, auditRoutes, uploadsRoutes, notificationsRoutes, financeRoutes, articlesRoutes, administrationRoutes, chatRoutes, planningRoutes);
 app.use("/api/v1", v1);
 
 app.use((_req, res) => res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Endpoint tidak ada" } }));
