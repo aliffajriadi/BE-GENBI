@@ -10,8 +10,6 @@ const schema = z.object({
   LETTER_ORG: z.string().default("GenBI"), // kode organisasi di nomor surat keluar
   // Opsional: biasanya diisi admin lewat web (Pengaturan → Instagram). Ini hanya cadangan/override.
   API_PUBLIC_URL: z.string().optional(), // alamat backend dari internet; kosong = diambil dari request
-  IG_APP_ID: z.string().optional(),
-  IG_APP_SECRET: z.string().optional(),
 });
 
 export const env = schema.parse(process.env);

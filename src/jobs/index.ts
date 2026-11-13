@@ -3,7 +3,7 @@ import { prisma } from "../lib/prisma.js";
 import { publishNow } from "../modules/articles/articles.service.js";
 import { closeAttendance, scopeUserIds } from "../modules/events/events.service.js";
 import { dailyBilling } from "../modules/finance/finance.service.js";
-import { refreshIfNeeded } from "../modules/instagram/instagram.service.js";
+import { refreshFeed } from "../modules/instagram/instagram.service.js";
 import { notify } from "../modules/notifications/notifications.service.js";
 import { fmtWib } from "../utils/date.js";
 
@@ -39,6 +39,6 @@ export function startJobs() {
   // Tiap hari 07.00 WIB: tagihan kas periode baru, status menunggak, pengingat H-3.
   cron.schedule("0 7 * * *", safe("billing", () => dailyBilling()), { timezone: "Asia/Jakarta" });
 
-  // Tiap hari 03.00 WIB: perpanjang token Instagram (berlaku 60 hari) sebelum kedaluwarsa.
-  cron.schedule("0 3 * * *", safe("instagram-token", () => refreshIfNeeded()), { timezone: "Asia/Jakarta" });
+  // Tiap 30 menit: simpan ulang profil & postingan Instagram ke database (landing page membaca dari sana).
+  cron.schedule("*/30 * * * *", safe("instagram-feed", () => refreshFeed()));
 }
