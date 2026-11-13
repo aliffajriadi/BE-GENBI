@@ -8,6 +8,10 @@ const schema = z.object({
   QR_SECRET: z.string().min(16),
   WEB_ORIGIN: z.string().default("http://localhost:3000"),
   LETTER_ORG: z.string().default("GenBI"), // kode organisasi di nomor surat keluar
+  API_PUBLIC_URL: z.string().default("http://localhost:4000"), // alamat backend dari internet (untuk callback OAuth)
+  // Aplikasi Meta (Instagram API with Instagram Login). Kosong = fitur Instagram nonaktif.
+  IG_APP_ID: z.string().optional(),
+  IG_APP_SECRET: z.string().optional(),
 });
 
 export const env = schema.parse(process.env);
