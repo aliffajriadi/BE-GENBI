@@ -8,8 +8,8 @@ const schema = z.object({
   QR_SECRET: z.string().min(16),
   WEB_ORIGIN: z.string().default("http://localhost:3000"),
   LETTER_ORG: z.string().default("GenBI"), // kode organisasi di nomor surat keluar
-  API_PUBLIC_URL: z.string().default("http://localhost:4000"), // alamat backend dari internet (untuk callback OAuth)
-  // Aplikasi Meta (Instagram API with Instagram Login). Kosong = fitur Instagram nonaktif.
+  // Opsional: biasanya diisi admin lewat web (Pengaturan → Instagram). Ini hanya cadangan/override.
+  API_PUBLIC_URL: z.string().optional(), // alamat backend dari internet; kosong = diambil dari request
   IG_APP_ID: z.string().optional(),
   IG_APP_SECRET: z.string().optional(),
 });
