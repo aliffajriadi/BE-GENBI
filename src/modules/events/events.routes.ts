@@ -39,6 +39,9 @@ eventsRoutes.get("/events", auth, requirePermission("event.read"), async (req, r
     ];
   }
   if (req.query.upcoming === "1") where.endAt = { gte: new Date() };
+  // Kalender: kegiatan yang bersinggungan dengan rentang [from, to).
+  const from = new Date(String(req.query.from)), to = new Date(String(req.query.to));
+  if (!isNaN(+from) && !isNaN(+to)) Object.assign(where, { startAt: { lt: to }, endAt: { gte: from } });
   const events = await prisma.event.findMany({
     where,
     orderBy: { startAt: req.query.upcoming === "1" ? "asc" : "desc" },
