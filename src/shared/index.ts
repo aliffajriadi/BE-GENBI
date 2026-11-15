@@ -110,7 +110,7 @@ export const createPeriodSchema = z.object({
   endDate: z.coerce.date(),
 });
 
-export const EVENT_TYPES = ["RAPAT_PLENO", "RAPAT_DIVISI", "KEGIATAN", "KEPANITIAAN"] as const;
+export const EVENT_TYPES = ["RAPAT", "KEGIATAN", "KEPANITIAAN"] as const;
 
 export const eventBaseSchema = z.object({
     title: z.string().min(3),

@@ -263,8 +263,7 @@ model Page {
 // ───────────── Absensi ─────────────
 
 enum EventType {
-  RAPAT_PLENO
-  RAPAT_DIVISI
+  RAPAT
   KEGIATAN
   KEPANITIAAN
 }
