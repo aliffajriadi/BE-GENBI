@@ -460,8 +460,8 @@ const ide = await ok(call(K, "POST", `/boards/${media.id}/columns`, { name: "Ide
 await ok(call(K, "PATCH", `/board-columns/${ide.id}`, { name: "Ide liar", position: 0 }));
 const cols = (await ok(call(A2, "GET", `/boards/${media.id}`))).columns;
 assert.equal(cols[0].name, "Ide liar"); assert.equal(cols.length, 5);
-assert.equal((await call(A2, "POST", `/boards/${media.id}/cards`, { columnId: cols[1].id, title: "Poster", assigneeId: a3.id })).status, 400); // PIC beda divisi
-const c1 = await ok(call(A2, "POST", `/boards/${media.id}/cards`, { columnId: cols[1].id, title: "Poster webinar", assigneeId: a1.id }));
+assert.equal((await call(A2, "POST", `/boards/${media.id}/cards`, { columnId: cols[1].id, title: "Poster", assigneeIds: [a3.id] })).status, 400); // PIC beda divisi
+const c1 = await ok(call(A2, "POST", `/boards/${media.id}/cards`, { columnId: cols[1].id, title: "Poster webinar", assigneeIds: [a1.id] }));
 const c2 = await ok(call(A2, "POST", `/boards/${media.id}/cards`, { columnId: cols[1].id, title: "Caption IG" }));
 await ok(call(A2, "POST", `/board-cards/${c2.id}/move`, { columnId: cols[1].id, index: 0 }));
 assert.deepEqual((await ok(call(A2, "GET", `/boards/${media.id}`))).cards.filter((c) => c.columnId === cols[1].id).map((c) => c.title), ["Caption IG", "Poster webinar"]);

@@ -396,7 +396,7 @@ export const boardCardSchema = z.object({
   columnId: z.string().min(1),
   title: z.string().trim().min(1, "Judul kartu wajib diisi").max(200),
   description: z.string().max(5000).nullish(),
-  assigneeId: z.string().nullish(),
+  assigneeIds: z.array(z.string().min(1)).max(10, "Maksimal 10 PIC").optional(), // PIC bisa lebih dari satu
   dueDate: z.coerce.date().nullish(),
   priority: z.enum(["LOW", "NORMAL", "HIGH", "URGENT"]).optional(),
 });

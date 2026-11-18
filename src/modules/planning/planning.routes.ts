@@ -47,14 +47,23 @@ async function ensureBoard(divisionId: string) {
   }
 }
 
-async function assertMember(divisionId: string, userId: string | null | undefined) {
-  if (!userId) return;
-  const m = await prisma.membership.count({ where: { userId, divisionId, period: { isActive: true }, user: { status: "ACTIVE", deletedAt: null } } });
-  if (!m) throw new AppError("VALIDATION", 400, "PIC harus anggota aktif divisi ini");
+// Semua PIC wajib anggota aktif divisi. Mengembalikan daftar id tanpa duplikat.
+async function assertMembers(divisionId: string, userIds: string[]) {
+  const ids = [...new Set(userIds)];
+  if (!ids.length) return ids;
+  const found = await prisma.membership.findMany({
+    where: { userId: { in: ids }, divisionId, period: { isActive: true }, user: { status: "ACTIVE", deletedAt: null } },
+    select: { userId: true },
+    distinct: ["userId"],
+  });
+  if (found.length !== ids.length) throw new AppError("VALIDATION", 400, "PIC harus anggota aktif divisi ini");
+  return ids;
 }
 
+const person = { select: { id: true, name: true, avatarUrl: true } };
+
 async function cardWithBoard(id: string) {
-  const c = await prisma.boardCard.findUnique({ where: { id }, include: { board: true } });
+  const c = await prisma.boardCard.findUnique({ where: { id }, include: { board: true, assignees: { select: { id: true } } } });
   if (!c) throw new AppError("NOT_FOUND", 404, "Kartu tidak ditemukan");
   return c;
 }
@@ -90,7 +99,7 @@ planningRoutes.get("/boards/:divisionId", auth, async (req, res) => {
   const [division, columns, cards, members] = await Promise.all([
     prisma.division.findUniqueOrThrow({ where: { id: divisionId }, select: { id: true, name: true } }),
     prisma.boardColumn.findMany({ where: { boardId: board.id }, orderBy: { position: "asc" } }),
-    prisma.boardCard.findMany({ where: { boardId: board.id }, orderBy: { position: "asc" }, include: { assignee: { select: { id: true, name: true, avatarUrl: true } }, _count: { select: { comments: true } } } }),
+    prisma.boardCard.findMany({ where: { boardId: board.id }, orderBy: { position: "asc" }, include: { assignees: person, _count: { select: { comments: true } } } }),
     prisma.user.findMany({
       where: { status: "ACTIVE", deletedAt: null, memberships: { some: { divisionId, period: { isActive: true } } } },
       select: { id: true, name: true, avatarUrl: true },
@@ -147,12 +156,14 @@ planningRoutes.post("/boards/:divisionId/cards", auth, validate(boardCardSchema)
   const board = await ensureBoard(divisionId);
   const col = await prisma.boardColumn.findFirst({ where: { id: req.body.columnId, boardId: board.id } });
   if (!col) throw new AppError("VALIDATION", 400, "Kolom tidak ada di papan ini");
-  await assertMember(divisionId, req.body.assigneeId);
+  const { assigneeIds = [], ...data } = req.body as { assigneeIds?: string[] } & Omit<Prisma.BoardCardUncheckedCreateInput, "boardId" | "position" | "createdById">;
+  const ids = await assertMembers(divisionId, assigneeIds);
   const last = await prisma.boardCard.aggregate({ where: { columnId: col.id }, _max: { position: true } });
   const card = await prisma.boardCard.create({
-    data: { ...req.body, boardId: board.id, position: (last._max.position ?? -1) + 1, createdById: u.id },
+    data: { ...data, boardId: board.id, position: (last._max.position ?? -1) + 1, createdById: u.id, assignees: { connect: ids.map((id) => ({ id })) } },
   });
-  if (card.assigneeId && card.assigneeId !== u.id) await notify([card.assigneeId], { type: "PLANNING_ASSIGNED", title: "Kamu jadi PIC kartu baru", body: card.title, link: cardLink(divisionId, card.id) });
+  const others = ids.filter((id) => id !== u.id);
+  if (others.length) await notify(others, { type: "PLANNING_ASSIGNED", title: "Kamu jadi PIC kartu baru", body: card.title, link: cardLink(divisionId, card.id) });
   changed(divisionId);
   ok(res, card, undefined, 201);
 });
@@ -161,11 +172,13 @@ planningRoutes.patch("/board-cards/:id", auth, validate(updateCardSchema), async
   const u = req.user!;
   const card = await cardWithBoard(String(req.params.id));
   assert(canEditCards(u, card.board.divisionId), "Hanya anggota divisi ini yang bisa mengubah kartu");
-  if (req.body.assigneeId !== undefined) await assertMember(card.board.divisionId, req.body.assigneeId);
-  const updated = await prisma.boardCard.update({ where: { id: card.id }, data: req.body as Prisma.BoardCardUncheckedUpdateInput });
-  if (updated.assigneeId && updated.assigneeId !== card.assigneeId && updated.assigneeId !== u.id) {
-    await notify([updated.assigneeId], { type: "PLANNING_ASSIGNED", title: "Kamu jadi PIC kartu", body: updated.title, link: cardLink(card.board.divisionId, card.id) });
-  }
+  const { assigneeIds, ...data } = req.body as { assigneeIds?: string[] } & Prisma.BoardCardUncheckedUpdateInput;
+  const ids = assigneeIds && (await assertMembers(card.board.divisionId, assigneeIds));
+  const before = new Set(card.assignees.map((a) => a.id));
+  const updated = await prisma.boardCard.update({ where: { id: card.id }, data: { ...data, ...(ids ? { assignees: { set: ids.map((id) => ({ id })) } } : {}) } });
+  // Kabari hanya PIC yang baru ditambahkan.
+  const added = (ids ?? []).filter((id) => !before.has(id) && id !== u.id);
+  if (added.length) await notify(added, { type: "PLANNING_ASSIGNED", title: "Kamu jadi PIC kartu", body: updated.title, link: cardLink(card.board.divisionId, card.id) });
   changed(card.board.divisionId);
   ok(res, updated);
 });
@@ -210,7 +223,7 @@ planningRoutes.post("/board-cards/:id/comments", auth, validate(boardCommentSche
   assert(canViewBoard(u, card.board.divisionId), "Papan ini hanya untuk anggota divisinya");
   const comment = await prisma.boardComment.create({ data: { cardId: card.id, authorId: u.id, body: req.body.body }, include: commentAuthor });
   // Kabari PIC & pembuat kartu (kecuali penulis komentar sendiri).
-  const to = [...new Set([card.assigneeId, card.createdById])].filter((id): id is string => !!id && id !== u.id);
+  const to = [...new Set([...card.assignees.map((a) => a.id), card.createdById])].filter((id) => id !== u.id);
   if (to.length) await notify(to, { type: "PLANNING_COMMENT", title: `${comment.author.name} mengomentari kartu`, body: `${card.title}: ${comment.body.slice(0, 140)}`, link: cardLink(card.board.divisionId, card.id) });
   changed(card.board.divisionId);
   ok(res, comment, undefined, 201);
