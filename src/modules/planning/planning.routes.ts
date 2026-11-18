@@ -2,7 +2,7 @@ import { Router } from "express";
 import { prisma, type Prisma } from "../../lib/prisma.js";
 import { auth, type AuthUser } from "../../middlewares/auth.js";
 import { validate } from "../../middlewares/validate.js";
-import { boardCardSchema, boardColumnSchema, GLOBAL_ROLES, moveCardSchema, updateCardSchema, updateColumnSchema } from "../../shared/index.js";
+import { boardCardSchema, boardColumnSchema, boardCommentSchema, GLOBAL_ROLES, moveCardSchema, updateCardSchema, updateColumnSchema } from "../../shared/index.js";
 import { AppError } from "../../utils/app-error.js";
 import { ok } from "../../utils/response.js";
 import { emitToRoom } from "../chat/chat.service.js";
@@ -21,6 +21,9 @@ const DEFAULT_COLUMNS = [
 
 export const boardRoom = (divisionId: string) => `board:${divisionId}`;
 const changed = (divisionId: string) => emitToRoom(boardRoom(divisionId), "board:changed", { divisionId });
+
+// Link notifikasi langsung membuka papan + kartunya.
+const cardLink = (divisionId: string, cardId: string) => `/dashboard/planning?division=${divisionId}&card=${cardId}`;
 
 export const canViewBoard = (u: AuthUser, divisionId: string) => u.divisionId === divisionId || GLOBAL_ROLES.includes(u.role);
 const canEditCards = (u: AuthUser, divisionId: string) => u.divisionId === divisionId || u.permissions.has("user.manage");
@@ -87,7 +90,7 @@ planningRoutes.get("/boards/:divisionId", auth, async (req, res) => {
   const [division, columns, cards, members] = await Promise.all([
     prisma.division.findUniqueOrThrow({ where: { id: divisionId }, select: { id: true, name: true } }),
     prisma.boardColumn.findMany({ where: { boardId: board.id }, orderBy: { position: "asc" } }),
-    prisma.boardCard.findMany({ where: { boardId: board.id }, orderBy: { position: "asc" }, include: { assignee: { select: { id: true, name: true, avatarUrl: true } } } }),
+    prisma.boardCard.findMany({ where: { boardId: board.id }, orderBy: { position: "asc" }, include: { assignee: { select: { id: true, name: true, avatarUrl: true } }, _count: { select: { comments: true } } } }),
     prisma.user.findMany({
       where: { status: "ACTIVE", deletedAt: null, memberships: { some: { divisionId, period: { isActive: true } } } },
       select: { id: true, name: true, avatarUrl: true },
@@ -149,7 +152,7 @@ planningRoutes.post("/boards/:divisionId/cards", auth, validate(boardCardSchema)
   const card = await prisma.boardCard.create({
     data: { ...req.body, boardId: board.id, position: (last._max.position ?? -1) + 1, createdById: u.id },
   });
-  if (card.assigneeId && card.assigneeId !== u.id) await notify([card.assigneeId], { type: "PLANNING_ASSIGNED", title: "Kamu jadi PIC kartu baru", body: card.title, link: "/dashboard/planning" });
+  if (card.assigneeId && card.assigneeId !== u.id) await notify([card.assigneeId], { type: "PLANNING_ASSIGNED", title: "Kamu jadi PIC kartu baru", body: card.title, link: cardLink(divisionId, card.id) });
   changed(divisionId);
   ok(res, card, undefined, 201);
 });
@@ -161,7 +164,7 @@ planningRoutes.patch("/board-cards/:id", auth, validate(updateCardSchema), async
   if (req.body.assigneeId !== undefined) await assertMember(card.board.divisionId, req.body.assigneeId);
   const updated = await prisma.boardCard.update({ where: { id: card.id }, data: req.body as Prisma.BoardCardUncheckedUpdateInput });
   if (updated.assigneeId && updated.assigneeId !== card.assigneeId && updated.assigneeId !== u.id) {
-    await notify([updated.assigneeId], { type: "PLANNING_ASSIGNED", title: "Kamu jadi PIC kartu", body: updated.title, link: "/dashboard/planning" });
+    await notify([updated.assigneeId], { type: "PLANNING_ASSIGNED", title: "Kamu jadi PIC kartu", body: updated.title, link: cardLink(card.board.divisionId, card.id) });
   }
   changed(card.board.divisionId);
   ok(res, updated);
@@ -187,5 +190,51 @@ planningRoutes.delete("/board-cards/:id", auth, async (req, res) => {
   assert(card.createdById === u.id || canManageColumns(u, card.board.divisionId), "Hanya pembuat kartu atau kepala divisi yang bisa menghapus");
   await prisma.boardCard.delete({ where: { id: card.id } });
   changed(card.board.divisionId);
+  ok(res, null);
+});
+
+// ───── Komentar kartu ─────
+// Lihat & tulis: siapa pun yang bisa melihat papan (pengurus inti bisa memberi masukan). Ubah: penulis. Hapus: penulis / pengelola papan.
+
+const commentAuthor = { author: { select: { id: true, name: true, avatarUrl: true } } };
+
+planningRoutes.get("/board-cards/:id/comments", auth, async (req, res) => {
+  const card = await cardWithBoard(String(req.params.id));
+  assert(canViewBoard(req.user!, card.board.divisionId), "Papan ini hanya untuk anggota divisinya");
+  ok(res, await prisma.boardComment.findMany({ where: { cardId: card.id }, orderBy: { createdAt: "asc" }, include: commentAuthor }));
+});
+
+planningRoutes.post("/board-cards/:id/comments", auth, validate(boardCommentSchema), async (req, res) => {
+  const u = req.user!;
+  const card = await cardWithBoard(String(req.params.id));
+  assert(canViewBoard(u, card.board.divisionId), "Papan ini hanya untuk anggota divisinya");
+  const comment = await prisma.boardComment.create({ data: { cardId: card.id, authorId: u.id, body: req.body.body }, include: commentAuthor });
+  // Kabari PIC & pembuat kartu (kecuali penulis komentar sendiri).
+  const to = [...new Set([card.assigneeId, card.createdById])].filter((id): id is string => !!id && id !== u.id);
+  if (to.length) await notify(to, { type: "PLANNING_COMMENT", title: `${comment.author.name} mengomentari kartu`, body: `${card.title}: ${comment.body.slice(0, 140)}`, link: cardLink(card.board.divisionId, card.id) });
+  changed(card.board.divisionId);
+  ok(res, comment, undefined, 201);
+});
+
+async function commentWithBoard(id: string) {
+  const c = await prisma.boardComment.findUnique({ where: { id }, include: { card: { include: { board: true } } } });
+  if (!c) throw new AppError("NOT_FOUND", 404, "Komentar tidak ditemukan");
+  return c;
+}
+
+planningRoutes.patch("/board-comments/:id", auth, validate(boardCommentSchema), async (req, res) => {
+  const c = await commentWithBoard(String(req.params.id));
+  assert(c.authorId === req.user!.id, "Hanya penulis yang bisa mengubah komentar");
+  const updated = await prisma.boardComment.update({ where: { id: c.id }, data: { body: req.body.body }, include: commentAuthor });
+  changed(c.card.board.divisionId);
+  ok(res, updated);
+});
+
+planningRoutes.delete("/board-comments/:id", auth, async (req, res) => {
+  const u = req.user!;
+  const c = await commentWithBoard(String(req.params.id));
+  assert(c.authorId === u.id || canManageColumns(u, c.card.board.divisionId), "Hanya penulis atau kepala divisi yang bisa menghapus komentar");
+  await prisma.boardComment.delete({ where: { id: c.id } });
+  changed(c.card.board.divisionId);
   ok(res, null);
 });

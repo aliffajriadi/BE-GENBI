@@ -398,6 +398,8 @@ export const boardCardSchema = z.object({
   description: z.string().max(5000).nullish(),
   assigneeId: z.string().nullish(),
   dueDate: z.coerce.date().nullish(),
+  priority: z.enum(["LOW", "NORMAL", "HIGH", "URGENT"]).optional(),
 });
 export const updateCardSchema = boardCardSchema.omit({ columnId: true }).partial().extend({ checklist: z.array(checklistItem).max(50).optional() });
 export const moveCardSchema = z.object({ columnId: z.string().min(1), index: z.number().int().min(0) });
+export const boardCommentSchema = z.object({ body: z.string().trim().min(1, "Komentar kosong").max(2000) });
