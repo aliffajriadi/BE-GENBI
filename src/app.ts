@@ -24,6 +24,7 @@ import { downloadsRoutes } from "./modules/downloads/downloads.routes.js";
 import { instagramRoutes } from "./modules/instagram/instagram.routes.js";
 import { linksRoutes } from "./modules/links/links.routes.js";
 import { formsRoutes } from "./modules/forms/forms.routes.js";
+import { slotsRoutes } from "./modules/slots/slots.routes.js";
 import { publicDir } from "./lib/storage.js";
 
 export const app = express();
@@ -41,7 +42,7 @@ app.use("/storage/public", express.static(publicDir, { maxAge: "7d" }));
 app.get("/health", (_req, res) => res.json({ ok: true }));
 
 const v1 = express.Router();
-v1.use(publicRoutes, authRoutes, userImportRoutes, usersRoutes, membersRoutes, divisionAccessRoutes, eventsRoutes, pointsRoutes, dashboardRoutes, auditRoutes, uploadsRoutes, notificationsRoutes, financeRoutes, articlesRoutes, administrationRoutes, chatRoutes, planningRoutes, downloadsRoutes, instagramRoutes, linksRoutes, formsRoutes);
+v1.use(publicRoutes, authRoutes, userImportRoutes, usersRoutes, membersRoutes, divisionAccessRoutes, eventsRoutes, pointsRoutes, dashboardRoutes, auditRoutes, uploadsRoutes, notificationsRoutes, financeRoutes, articlesRoutes, administrationRoutes, chatRoutes, planningRoutes, downloadsRoutes, instagramRoutes, linksRoutes, formsRoutes, slotsRoutes);
 app.use("/api/v1", v1);
 
 app.use((_req, res) => res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Endpoint tidak ada" } }));

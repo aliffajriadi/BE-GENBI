@@ -71,6 +71,8 @@ model User {
   shortLinks         ShortLink[]
   forms              Form[]
   formResponses      FormResponse[]
+  slotLists          SlotList[]
+  slotEntries        SlotEntry[]
 }
 
 model Role {
@@ -886,4 +888,51 @@ model FormResponse {
 
   @@index([formId, createdAt])
   @@index([formId, userId])
+}
+
+// Slot: pengganti list "yang mau ikut" di grup WA (kelompok, undangan/RSVP, sesi, dll.). Satu anggota maksimal satu pilihan per list.
+model SlotList {
+  id          String      @id @default(cuid())
+  slug        String      @unique
+  title       String
+  description String?     @db.Text
+  optionNoun  String      @default("Kelompok") // sebutan pilihan di halaman peserta, mis. Kelompok / Sesi / Kehadiran
+  joinLabel   String      @default("Gabung") // teks tombol, mis. Gabung / Hadir / Daftar
+  questions   Json? // pertanyaan wajib/opsional saat memilih (format sama dengan Form)
+  isOpen      Boolean     @default(true)
+  closesAt    DateTime?
+  createdById String
+  createdBy   User        @relation(fields: [createdById], references: [id])
+  groups      SlotGroup[]
+  entries     SlotEntry[]
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+}
+
+model SlotGroup {
+  id          String      @id @default(cuid())
+  listId      String
+  name        String
+  description String?
+  capacity    Int? // null = tanpa batas
+  position    Int
+  list        SlotList    @relation(fields: [listId], references: [id], onDelete: Cascade)
+  entries     SlotEntry[]
+
+  @@index([listId, position])
+}
+
+model SlotEntry {
+  id        String    @id @default(cuid())
+  listId    String
+  groupId   String
+  userId    String
+  list      SlotList  @relation(fields: [listId], references: [id], onDelete: Cascade)
+  group     SlotGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  answers   Json? // jawaban peserta; hanya untuk pembuat
+  createdAt DateTime  @default(now())
+
+  @@unique([listId, userId])
+  @@index([groupId, createdAt])
 }
