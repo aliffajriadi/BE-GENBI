@@ -2,7 +2,7 @@ import { Router } from "express";
 import { prisma, type Prisma } from "../../lib/prisma.js";
 import { auth, type AuthUser } from "../../middlewares/auth.js";
 import { validate } from "../../middlewares/validate.js";
-import { boardCardSchema, boardColumnSchema, boardCommentSchema, GLOBAL_ROLES, moveCardSchema, updateCardSchema, updateColumnSchema } from "../../shared/index.js";
+import { boardCardSchema, boardColumnSchema, boardCommentSchema, boardNoteSchema, GLOBAL_ROLES, moveCardSchema, updateBoardNoteSchema, updateCardSchema, updateColumnSchema } from "../../shared/index.js";
 import { AppError } from "../../utils/app-error.js";
 import { ok } from "../../utils/response.js";
 import { emitToRoom } from "../chat/chat.service.js";
@@ -96,7 +96,7 @@ planningRoutes.get("/boards/:divisionId", auth, async (req, res) => {
   const divisionId = String(req.params.divisionId);
   assert(canViewBoard(u, divisionId), "Papan ini hanya untuk anggota divisinya");
   const board = await ensureBoard(divisionId);
-  const [division, columns, cards, members] = await Promise.all([
+  const [division, columns, cards, members, notes] = await Promise.all([
     prisma.division.findUniqueOrThrow({ where: { id: divisionId }, select: { id: true, name: true } }),
     prisma.boardColumn.findMany({ where: { boardId: board.id }, orderBy: { position: "asc" } }),
     prisma.boardCard.findMany({ where: { boardId: board.id }, orderBy: { position: "asc" }, include: { assignees: person, _count: { select: { comments: true } } } }),
@@ -105,8 +105,9 @@ planningRoutes.get("/boards/:divisionId", auth, async (req, res) => {
       select: { id: true, name: true, avatarUrl: true },
       orderBy: { name: "asc" },
     }),
+    prisma.boardNote.findMany({ where: { boardId: board.id }, orderBy: [{ pinned: "desc" }, { updatedAt: "desc" }], include: { createdBy: person } }),
   ]);
-  ok(res, { division, columns, cards, members, canEdit: canEditCards(u, divisionId), canManage: canManageColumns(u, divisionId) });
+  ok(res, { division, columns, cards, members, notes, canEdit: canEditCards(u, divisionId), canManage: canManageColumns(u, divisionId) });
 });
 
 // ───── Kolom ─────
@@ -249,5 +250,42 @@ planningRoutes.delete("/board-comments/:id", auth, async (req, res) => {
   assert(c.authorId === u.id || canManageColumns(u, c.card.board.divisionId), "Hanya penulis atau kepala divisi yang bisa menghapus komentar");
   await prisma.boardComment.delete({ where: { id: c.id } });
   changed(c.card.board.divisionId);
+  ok(res, null);
+});
+
+// ───── Catatan & link divisi ─────
+// Lihat: siapa pun yang bisa melihat papan (ikut GET papan). Tambah/ubah: anggota divisi. Hapus: pembuat / pengelola papan.
+
+async function noteWithBoard(id: string) {
+  const n = await prisma.boardNote.findUnique({ where: { id }, include: { board: true } });
+  if (!n) throw new AppError("NOT_FOUND", 404, "Catatan tidak ditemukan");
+  return n;
+}
+
+planningRoutes.post("/boards/:divisionId/notes", auth, validate(boardNoteSchema), async (req, res) => {
+  const u = req.user!;
+  const divisionId = String(req.params.divisionId);
+  assert(canEditCards(u, divisionId), "Hanya anggota divisi ini yang bisa menambah catatan");
+  const board = await ensureBoard(divisionId);
+  if ((await prisma.boardNote.count({ where: { boardId: board.id } })) >= 100) throw new AppError("VALIDATION", 400, "Maksimal 100 catatan per divisi");
+  const note = await prisma.boardNote.create({ data: { ...req.body, boardId: board.id, createdById: u.id } });
+  changed(divisionId);
+  ok(res, note, undefined, 201);
+});
+
+planningRoutes.patch("/board-notes/:id", auth, validate(updateBoardNoteSchema), async (req, res) => {
+  const n = await noteWithBoard(String(req.params.id));
+  assert(canEditCards(req.user!, n.board.divisionId), "Hanya anggota divisi ini yang bisa mengubah catatan");
+  const note = await prisma.boardNote.update({ where: { id: n.id }, data: req.body });
+  changed(n.board.divisionId);
+  ok(res, note);
+});
+
+planningRoutes.delete("/board-notes/:id", auth, async (req, res) => {
+  const u = req.user!;
+  const n = await noteWithBoard(String(req.params.id));
+  assert(n.createdById === u.id || canManageColumns(u, n.board.divisionId), "Hanya pembuat catatan atau kepala divisi yang bisa menghapus");
+  await prisma.boardNote.delete({ where: { id: n.id } });
+  changed(n.board.divisionId);
   ok(res, null);
 });

@@ -67,6 +67,10 @@ model User {
   boardCardsAssigned BoardCard[]        @relation("CardAssignees")
   boardCardsCreated  BoardCard[]        @relation("CardCreator")
   boardComments      BoardComment[]
+  boardNotes         BoardNote[]
+  shortLinks         ShortLink[]
+  forms              Form[]
+  formResponses      FormResponse[]
 }
 
 model Role {
@@ -754,6 +758,7 @@ model Board {
   division   Division      @relation(fields: [divisionId], references: [id], onDelete: Cascade)
   columns    BoardColumn[]
   cards      BoardCard[]
+  notes      BoardNote[]
   createdAt  DateTime      @default(now())
   updatedAt  DateTime      @updatedAt
 }
@@ -813,4 +818,72 @@ model BoardComment {
   updatedAt DateTime  @updatedAt
 
   @@index([cardId, createdAt])
+}
+
+// Catatan & link divisi (mis. link Canva yang sedang dipakai). Yang di-pin tampil di atas papan.
+model BoardNote {
+  id          String   @id @default(cuid())
+  boardId     String
+  title       String
+  url         String?  @db.VarChar(1000)
+  body        String?  @db.Text
+  pinned      Boolean  @default(false)
+  createdById String
+  board       Board    @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  createdBy   User     @relation(fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([boardId, pinned])
+}
+
+// Shortlink pakai domain sendiri: /l/<slug> diarahkan ke url.
+model ShortLink {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  url         String   @db.VarChar(1000)
+  title       String
+  active      Boolean  @default(true)
+  clicks      Int      @default(0)
+  createdById String
+  createdBy   User     @relation(fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// Form ala Google Form. Pertanyaan disimpan sebagai JSON di Form dan dikunci setelah ada respons.
+enum FormAudience {
+  PUBLIC // siapa pun yang punya link, tanpa login
+  MEMBERS // wajib login; pengisi tercatat otomatis
+}
+
+model Form {
+  id          String         @id @default(cuid())
+  slug        String         @unique
+  title       String
+  description String?        @db.Text
+  questions   Json // [{ id, type, label, help?, required, options? }]
+  audience    FormAudience   @default(MEMBERS)
+  isOpen      Boolean        @default(true)
+  closesAt    DateTime?
+  onePerUser  Boolean        @default(true) // hanya berlaku untuk MEMBERS
+  theme       Json? // tampilan halaman isi: { style, accent, background, font, radius, coverUrl, showLogo }
+  createdById String
+  createdBy   User           @relation(fields: [createdById], references: [id])
+  responses   FormResponse[]
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+}
+
+model FormResponse {
+  id        String   @id @default(cuid())
+  formId    String
+  userId    String?
+  answers   Json // { [questionId]: string | string[] }
+  form      Form     @relation(fields: [formId], references: [id], onDelete: Cascade)
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt DateTime @default(now())
+
+  @@index([formId, createdAt])
+  @@index([formId, userId])
 }

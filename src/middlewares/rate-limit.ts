@@ -10,5 +10,13 @@ export const loginLimiter = rateLimit({
     res.status(429).json({ success: false, error: { code: "RATE_LIMITED", message: "Terlalu banyak percobaan, coba lagi 1 menit" } }),
 });
 
+// Kirim form publik: cukup longgar untuk satu WiFi kampus, cukup ketat untuk menahan spam.
+export const formLimiter = rateLimit({
+  windowMs: 10 * 60_000,
+  limit: 30,
+  keyGenerator: (req) => ipKeyGenerator(req.ip ?? ""),
+  handler: (_req, res) => res.status(429).json({ success: false, error: { code: "RATE_LIMITED", message: "Terlalu banyak kiriman, coba lagi beberapa menit lagi" } }),
+});
+
 // Per akun, bukan per IP: satu ruangan rapat biasanya satu WiFi (satu IP publik), jangan sampai peserta ke-31 ditolak.
 export const scanLimiter = rateLimit({ windowMs: 60_000, limit: 30, keyGenerator: (req) => req.user?.id ?? ipKeyGenerator(req.ip ?? "") });
