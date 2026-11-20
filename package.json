@@ -11,6 +11,7 @@
     "test:e2e": "node tests/e2e-flow.mjs && node tests/chat-burst.mjs",
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
+    "db:status": "prisma migrate status",
     "db:seed": "tsx --env-file=.env prisma/seed.ts",
     "postinstall": "prisma generate"
   },

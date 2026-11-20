@@ -24,7 +24,7 @@ export async function syncChannelRooms(channelId: string) {
   }
 }
 
-const CORE_ROLES = ["SYS_ADMIN", "KETUM", "SEKRETARIS", "BENDAHARA", "KADIV"];
+const CORE_ROLES = ["SYS_ADMIN", "KETUM", "WAKETUM", "SEKRETARIS", "BENDAHARA", "KADIV"];
 type ChannelLike = Pick<Channel, "type" | "divisionId" | "key" | "createdById" | "archivedAt">;
 
 // Pengurus inti (Ketum, Sekretaris, admin): kelola semua channel.

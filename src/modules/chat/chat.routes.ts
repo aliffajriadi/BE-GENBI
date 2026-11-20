@@ -139,7 +139,7 @@ chatRoutes.get("/channels/:id/members", auth, async (req, res) => {
     c.type === "CUSTOM"
       ? (await prisma.channelMember.findMany({ where: { channelId: c.id, isMember: true, user: { deletedAt: null } }, select: { user: { select } }, orderBy: { user: { name: "asc" } } })).map((m) => m.user)
       : (await prisma.membership.findMany({
-          where: { ...active, ...(c.type === "DIVISION" ? { divisionId: c.divisionId } : c.type === "CORE" ? { role: { key: { in: ["KETUM", "SEKRETARIS", "BENDAHARA", "KADIV"] } } } : { role: { key: { not: "SYS_ADMIN" } } }) },
+          where: { ...active, ...(c.type === "DIVISION" ? { divisionId: c.divisionId } : c.type === "CORE" ? { role: { key: { in: ["KETUM", "WAKETUM", "SEKRETARIS", "BENDAHARA", "KADIV"] } } } : { role: { key: { not: "SYS_ADMIN" } } }) },
           select: { user: { select } },
           orderBy: { user: { name: "asc" } },
           take: 300,

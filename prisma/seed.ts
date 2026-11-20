@@ -8,6 +8,7 @@ const prisma = new PrismaClient();
 const ROLE_NAMES: Record<string, string> = {
   SYS_ADMIN: "System Administrator",
   KETUM: "Ketua Umum",
+  WAKETUM: "Wakil Ketua Umum",
   SEKRETARIS: "Sekretaris",
   BENDAHARA: "Bendahara",
   KADIV: "Kepala Divisi",

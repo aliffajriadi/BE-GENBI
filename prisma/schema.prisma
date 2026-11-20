@@ -73,6 +73,7 @@ model User {
   formResponses      FormResponse[]
   slotLists          SlotList[]
   slotEntries        SlotEntry[]
+  signatures         Signature[]
 }
 
 model Role {
@@ -935,4 +936,21 @@ model SlotEntry {
 
   @@unique([listId, userId])
   @@index([groupId, createdAt])
+}
+
+// Tanda tangan elektronik: QR berisi <web>/ttd/<code>; halaman publik menampilkan siapa, jabatan, dan untuk agenda apa.
+model Signature {
+  id          String    @id @default(cuid())
+  code        String    @unique // acak, tidak bisa ditebak; tetap sama walau isi diubah supaya QR yang sudah dicetak tetap berlaku
+  title       String // agenda / acara / dokumen
+  purpose     String?   @db.Text // dalam rangka apa
+  signerTitle String // jabatan saat menandatangani, mis. "Ketua Umum GenBI Kepri 2026"
+  signedAt    DateTime  @default(now())
+  revokedAt   DateTime? // dicabut: halaman publik menyatakan tidak berlaku
+  signerId    String
+  signer      User      @relation(fields: [signerId], references: [id], onDelete: Restrict)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([signerId, createdAt])
 }
