@@ -6,12 +6,14 @@ import {
     bankAccountSchema, duesPlanSchema,
     paymentSchema,
     rejectSchema,
-    updateDuesPlanSchema
+    updateDuesPlanSchema,
+    type DuesPlanInput
 } from "../../shared/index.js";
 import { AppError } from "../../utils/app-error.js";
 import { paging } from "../../utils/paging.js";
 import { ok } from "../../utils/response.js";
 import { audit } from "../audit/audit.service.js";
+import { validParticipants } from "../events/events.service.js";
 import { notify } from "../notifications/notifications.service.js";
 import { award } from "../points/points.service.js";
 import { BILL_LABEL } from "./billing.js";
@@ -53,7 +55,7 @@ financeRoutes.patch("/bank-accounts/:id", auth, validate(bankAccountSchema.parti
 financeRoutes.get("/dues-plans", auth, async (req, res) => {
   const t = kasOf(req.query);
   assertTreasury(req.user!, t, "read");
-  const plans = await prisma.duesPlan.findMany({ where: { deletedAt: null, treasuryDivisionId: t }, orderBy: { createdAt: "desc" }, include: { division: { select: { name: true } } } });
+  const plans = await prisma.duesPlan.findMany({ where: { deletedAt: null, treasuryDivisionId: t }, orderBy: { createdAt: "desc" }, include: { division: { select: { name: true } }, _count: { select: { members: true } } } });
   const stats = await prisma.duesBill.groupBy({ by: ["planId", "status"], where: { planId: { in: plans.map((p) => p.id) } }, _count: true, _sum: { amount: true } });
   ok(
     res,
@@ -68,9 +70,14 @@ financeRoutes.get("/dues-plans", auth, async (req, res) => {
 financeRoutes.post("/dues-plans", auth, validate(duesPlanSchema), async (req, res) => {
   const t = kasOf(req.query);
   assertTreasury(req.user!, t, "manage");
-  // Kas divisi hanya bisa menagih anggota divisinya sendiri.
-  const target = t ? { scope: "DIVISION" as const, divisionId: t } : { divisionId: req.body.scope === "DIVISION" ? req.body.divisionId : null };
-  const plan = await prisma.duesPlan.create({ data: { ...req.body, ...target, treasuryDivisionId: t } });
+  // Kas divisi hanya bisa menagih anggota divisinya sendiri (seluruhnya atau orang pilihan).
+  const { userIds, ...body } = req.body as DuesPlanInput;
+  const manual = body.scope === "MANUAL";
+  const target = t ? { scope: manual ? ("MANUAL" as const) : ("DIVISION" as const), divisionId: t } : { divisionId: body.scope === "DIVISION" ? body.divisionId : null };
+  const picked = manual ? await validParticipants(userIds ?? [], t) : [];
+  const plan = await prisma.duesPlan.create({
+    data: { ...body, ...target, treasuryDivisionId: t, members: picked.length ? { create: picked.map((userId) => ({ userId })) } : undefined },
+  });
   await audit(req, "duesPlan.create", "DuesPlan", plan.id, null, plan);
   const generated = await generateBills(plan);
   ok(res, { ...plan, generated }, undefined, 201);

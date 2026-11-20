@@ -10,6 +10,15 @@ export const siteSchema = z.object({
 });
 export type SiteContent = z.infer<typeof siteSchema>;
 
+// Foto panel kanan halaman login (desktop), diatur System Administrator.
+export const loginPageSchema = z.object({
+  image: z.string().max(300).nullable(), // URL dari POST /uploads (public=true); null = panel biru polos
+  alt: z.string().max(200).optional(),
+  title: z.string().max(120).optional(), // judul besar di atas foto; kosong = tanpa judul
+  caption: z.string().max(240).optional(),
+});
+export type LoginPage = z.infer<typeof loginPageSchema>;
+
 // Versi aplikasi mobile: di bawah minVersion = wajib update (app diblokir); di bawah latestVersion = disarankan.
 const semver = z.string().regex(/^\d+\.\d+\.\d+$/, "Format versi: 1.2.3");
 export const appVersionSchema = z

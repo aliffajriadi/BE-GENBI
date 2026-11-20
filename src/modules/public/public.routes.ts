@@ -2,7 +2,7 @@ import { Router } from "express";
 import { prisma } from "../../lib/prisma.js";
 import { auth, requirePermission } from "../../middlewares/auth.js";
 import { validate } from "../../middlewares/validate.js";
-import { appVersionSchema, siteSchema, type AppVersion, type SiteContent } from "../../shared/index.js";
+import { appVersionSchema, loginPageSchema, siteSchema, type AppVersion, type LoginPage, type SiteContent } from "../../shared/index.js";
 import { AppError } from "../../utils/app-error.js";
 import { ok } from "../../utils/response.js";
 import { audit } from "../audit/audit.service.js";
@@ -59,13 +59,40 @@ publicRoutes.get("/public/site", async (_req, res) => {
 // Pengurus inti (pemegang article.publish: Ketum, Sekretaris, admin) mengganti foto & teks hero.
 publicRoutes.patch("/site", auth, requirePermission("article.publish"), validate(siteSchema), async (req, res) => {
   const body = req.body as SiteContent;
-  if (body.heroImage) {
-    const up = await prisma.upload.findUnique({ where: { key: body.heroImage.replace(/^\/storage\//, "") } });
-    if (!up || up.isPrivate || !up.mime.startsWith("image/")) throw new AppError("VALIDATION", 400, "Foto latar harus gambar yang diupload lewat panel");
-  }
+  await assertPublicImage(body.heroImage);
   const before = await prisma.page.findUnique({ where: { slug: SITE_SLUG } });
   await prisma.page.upsert({ where: { slug: SITE_SLUG }, update: { contentJson: body }, create: { slug: SITE_SLUG, title: "Beranda", contentJson: body } });
   await audit(req, "site.update", "Page", SITE_SLUG, before?.contentJson ?? null, body);
+  ok(res, body);
+});
+
+// Foto harus upload publik bergambar milik sistem, bukan URL luar sembarang.
+async function assertPublicImage(url: string | null) {
+  if (!url) return;
+  const up = await prisma.upload.findUnique({ where: { key: url.replace(/^\/storage\//, "") } });
+  if (!up || up.isPrivate || !up.mime.startsWith("image/")) throw new AppError("VALIDATION", 400, "Foto latar harus gambar yang diupload lewat panel");
+}
+
+// ───── Foto halaman login ─────
+const LOGIN_SLUG = "login";
+const DEFAULT_LOGIN: LoginPage = {
+  image: null,
+  alt: "",
+  title: "Tumbuh bersama, berkontribusi untuk negeri.",
+  caption: "Satu tempat untuk absen kegiatan, poin keaktifan, kas, dan tulisan anggota GenBI.",
+};
+
+publicRoutes.get("/public/login-page", async (_req, res) => {
+  const page = await prisma.page.findUnique({ where: { slug: LOGIN_SLUG } });
+  ok(res, { ...DEFAULT_LOGIN, ...((page?.contentJson as Partial<LoginPage> | null) ?? {}) });
+});
+
+publicRoutes.put("/login-page", auth, requirePermission("settings.manage"), validate(loginPageSchema), async (req, res) => {
+  const body = req.body as LoginPage;
+  await assertPublicImage(body.image);
+  const before = await prisma.page.findUnique({ where: { slug: LOGIN_SLUG } });
+  await prisma.page.upsert({ where: { slug: LOGIN_SLUG }, update: { contentJson: body }, create: { slug: LOGIN_SLUG, title: "Halaman login", contentJson: body } });
+  await audit(req, "login_page.update", "Page", LOGIN_SLUG, before?.contentJson ?? null, body);
   ok(res, body);
 });
 

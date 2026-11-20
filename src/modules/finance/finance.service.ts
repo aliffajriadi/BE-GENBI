@@ -14,6 +14,7 @@ export async function generateBills(plan: DuesPlan, now = new Date()) {
       user: { status: "ACTIVE", deletedAt: null },
       role: { key: { not: "SYS_ADMIN" } },
       ...(plan.scope === "DIVISION" ? { divisionId: plan.divisionId } : {}),
+      ...(plan.scope === "MANUAL" ? { user: { status: "ACTIVE", deletedAt: null, duesPlanMembers: { some: { planId: plan.id } } } } : {}),
     },
     select: { userId: true },
   });
