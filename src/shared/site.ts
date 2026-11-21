@@ -19,6 +19,19 @@ export const loginPageSchema = z.object({
 });
 export type LoginPage = z.infer<typeof loginPageSchema>;
 
+// Kontak organisasi di footer & ajakan sponsorship, diatur Sekretaris (article.publish). Kosong = tidak ditampilkan.
+const link = z.union([z.literal(""), z.string().trim().url("Link tidak valid").regex(/^https:\/\//, "Link harus diawali https://").max(300)]);
+export const contactsSchema = z.object({
+  email: z.union([z.literal(""), z.string().trim().email("Email tidak valid").max(120)]),
+  whatsapp: z.union([z.literal(""), z.string().trim().regex(/^\+?[0-9 -]{8,20}$/, "Nomor WhatsApp tidak valid")]),
+  instagram: link,
+  youtube: link,
+  tiktok: link,
+  linkedin: link,
+  address: z.string().trim().max(300),
+});
+export type Contacts = z.infer<typeof contactsSchema>;
+
 // Versi aplikasi mobile: di bawah minVersion = wajib update (app diblokir); di bawah latestVersion = disarankan.
 const semver = z.string().regex(/^\d+\.\d+\.\d+$/, "Format versi: 1.2.3");
 export const appVersionSchema = z

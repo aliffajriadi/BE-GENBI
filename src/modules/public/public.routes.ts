@@ -2,7 +2,7 @@ import { Router } from "express";
 import { prisma } from "../../lib/prisma.js";
 import { auth, requirePermission } from "../../middlewares/auth.js";
 import { validate } from "../../middlewares/validate.js";
-import { appVersionSchema, loginPageSchema, siteSchema, type AppVersion, type LoginPage, type SiteContent } from "../../shared/index.js";
+import { appVersionSchema, contactsSchema, loginPageSchema, siteSchema, type AppVersion, type Contacts, type LoginPage, type SiteContent } from "../../shared/index.js";
 import { AppError } from "../../utils/app-error.js";
 import { ok } from "../../utils/response.js";
 import { audit } from "../audit/audit.service.js";
@@ -93,6 +93,23 @@ publicRoutes.put("/login-page", auth, requirePermission("settings.manage"), vali
   const before = await prisma.page.findUnique({ where: { slug: LOGIN_SLUG } });
   await prisma.page.upsert({ where: { slug: LOGIN_SLUG }, update: { contentJson: body }, create: { slug: LOGIN_SLUG, title: "Halaman login", contentJson: body } });
   await audit(req, "login_page.update", "Page", LOGIN_SLUG, before?.contentJson ?? null, body);
+  ok(res, body);
+});
+
+// ───── Kontak organisasi (footer) ─────
+const CONTACTS_SLUG = "kontak";
+const DEFAULT_CONTACTS: Contacts = { email: "", whatsapp: "", instagram: "", youtube: "", tiktok: "", linkedin: "", address: "" };
+
+publicRoutes.get("/public/contacts", async (_req, res) => {
+  const page = await prisma.page.findUnique({ where: { slug: CONTACTS_SLUG } });
+  ok(res, { ...DEFAULT_CONTACTS, ...((page?.contentJson as Partial<Contacts> | null) ?? {}) });
+});
+
+publicRoutes.put("/contacts", auth, requirePermission("article.publish"), validate(contactsSchema), async (req, res) => {
+  const body = req.body as Contacts;
+  const before = await prisma.page.findUnique({ where: { slug: CONTACTS_SLUG } });
+  await prisma.page.upsert({ where: { slug: CONTACTS_SLUG }, update: { contentJson: body }, create: { slug: CONTACTS_SLUG, title: "Kontak", contentJson: body } });
+  await audit(req, "contacts.update", "Page", CONTACTS_SLUG, before?.contentJson ?? null, body);
   ok(res, body);
 });
 
